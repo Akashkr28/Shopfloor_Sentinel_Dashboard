@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sentinel",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "backend", "start"],
+      "port": 4000
+    }
+  ]
+}

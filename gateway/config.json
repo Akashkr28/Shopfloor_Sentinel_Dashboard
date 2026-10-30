@@ -1,0 +1,21 @@
+{
+  "backendUrl": "http://localhost:4000/api",
+  "gatewayToken": "dev-gateway-token",
+  "intervalSeconds": [30, 60],
+  "bufferFile": "buffer.jsonl",
+  "machines": [
+    "PRESS_LINE_1_HMI",
+    "PRESS_LINE_2_HMI",
+    "CNC_CELL_3_PC",
+    "PACKAGING_HMI_A",
+    "OFFICE_LAN"
+  ],
+  "eventWeights": {
+    "ROUTINE_CHECK": 5,
+    "ABNORMAL_TRAFFIC": 2,
+    "UNK_REMOTE_LOGIN": 2,
+    "NEW_DEVICE": 1,
+    "USB_INSERT": 1,
+    "SUSPICIOUS_SOFTWARE": 0.3
+  }
+}
