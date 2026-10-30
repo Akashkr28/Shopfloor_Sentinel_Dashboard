@@ -1,0 +1,22 @@
+# Backend + dashboard. Put secrets in /opt/shopfloor-sentinel/backend/.env (see .env.example).
+#   sudo systemctl enable --now sentinel-backend
+[Unit]
+Description=Shopfloor Sentinel – backend and dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sentinel
+WorkingDirectory=/opt/shopfloor-sentinel/backend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/server.js
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/shopfloor-sentinel/backend/data /opt/shopfloor-sentinel/backend/uploads
+ProtectHome=true
+PrivateTmp=true
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

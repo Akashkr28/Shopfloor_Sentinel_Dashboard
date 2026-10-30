@@ -96,6 +96,19 @@ export const templates = [
     },
   },
   {
+    // Raised by net_monitor.py when a Modbus/TCP write reaches a PLC from a computer that isn't an engineering station.
+    eventTypeKey: 'PLC_WRITE',
+    defaultSeverity: 'RED',
+    iconName: 'lock',
+    ownerFollowUp: 'Ask the engineer to confirm who changed the PLC program or settings and compare with the last known-good backup.',
+    loc: {
+      en: ['Machine program or settings changed', 'The machine behaves differently, a recipe / setpoint changed, or the HMI shows "download" or "program changed".', 'If the machine behaves strangely, stop it safely. Do not change anything back yourself. Write down what changed.', `Call Maintenance Engineer now: ${ENGINEER}`],
+      hi: ['मशीन का प्रोग्राम या सेटिंग बदली गई', 'मशीन अलग तरह से चल रही है, रेसिपी / सेटपॉइंट बदल गया है, या HMI पर "download" या "program changed" दिख रहा है।', 'मशीन अजीब चले तो उसे सुरक्षित तरीके से रोकें। खुद कुछ भी वापस न बदलें। क्या बदला, वह लिख लें।', `अभी मेंटेनेंस इंजीनियर को फ़ोन करें: ${ENGINEER}`],
+      mr: ['मशीनचा प्रोग्राम किंवा सेटिंग बदलली', 'मशीन वेगळ्या पद्धतीने चालत आहे, रेसिपी / सेटपॉइंट बदलला आहे, किंवा HMI वर "download" किंवा "program changed" दिसत आहे.', 'मशीन विचित्र चालत असेल तर ती सुरक्षितपणे थांबवा. स्वतः काहीही परत बदलू नका. काय बदलले ते लिहून ठेवा.', `आत्ताच मेंटेनन्स इंजिनिअरला फोन करा: ${ENGINEER}`],
+      ta: ['இயந்திர நிரல் அல்லது அமைப்பு மாற்றப்பட்டது', 'இயந்திரம் வேறு மாதிரி இயங்குகிறது, ரெசிபி / செட்பாயிண்ட் மாறியுள்ளது, அல்லது HMI-ல் "download" அல்லது "program changed" தெரிகிறது.', 'இயந்திரம் விசித்திரமாக இயங்கினால் பாதுகாப்பாக நிறுத்தவும். நீங்களே எதையும் மாற்றாதீர்கள். என்ன மாறியது என்று குறித்துக்கொள்ளுங்கள்.', `உடனே பராமரிப்பு பொறியாளரை அழைக்கவும்: ${ENGINEER}`],
+    },
+  },
+  {
     // Fallback for event types the gateway sends before an engineer has written a template.
     eventTypeKey: 'UNKNOWN_EVENT',
     defaultSeverity: 'AMBER',

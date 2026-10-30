@@ -1,0 +1,23 @@
+# Log monitor: tails local logs and receives syslog from HMIs on udp/5514.
+#   sudo systemctl enable --now sentinel-log-monitor
+[Unit]
+Description=Shopfloor Sentinel – passive log monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sentinel
+# Membership of "adm" lets it read /var/log/auth.log and kern.log.
+SupplementaryGroups=adm
+WorkingDirectory=/opt/shopfloor-sentinel/gateway
+ExecStart=/usr/bin/python3 -u log_monitor.py
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/shopfloor-sentinel/gateway
+ProtectHome=true
+PrivateTmp=true
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

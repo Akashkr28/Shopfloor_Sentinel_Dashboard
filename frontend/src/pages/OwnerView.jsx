@@ -48,6 +48,29 @@ function WhatsAppPreview({ text, onClose, onSend }) {
   );
 }
 
+const TYPE_LABEL = {
+  RED_ALERT: 'Red alert', DAILY_SUMMARY: 'Daily summary', ESCALATION: 'Escalation', RESOLVED_UPDATE: 'Handled update',
+  GATEWAY_OFFLINE: 'Gateway status', TEST: 'Test',
+};
+
+/** WhatsApp-style ticks: ✓ sent, ✓✓ delivered, blue ✓✓ read. */
+function Delivery({ n, onRetry }) {
+  if (n.status === 'FAILED') {
+    return (
+      <span className="delivery failed" title={n.error || ''}>
+        failed{n.attempts > 1 ? ` after ${n.attempts} tries` : ''}{' '}
+        <button className="link-btn" onClick={() => onRetry(n.id)}>retry</button>
+      </span>
+    );
+  }
+  if (n.status === 'PENDING') {
+    return <span className="delivery pending" title={n.error || ''}>{n.attempts ? `retrying (${n.attempts})` : 'sending…'}</span>;
+  }
+  const d = n.deliveryStatus || 'sent';
+  const ticks = d === 'read' || d === 'delivered' ? '✓✓' : '✓';
+  return <span className={`delivery ${d}`}><span className="ticks">{ticks}</span> {d}</span>;
+}
+
 export default function OwnerView() {
   const summary = useFetch('/owner/daily-summary');
   const notifications = useFetch('/notifications');
@@ -58,6 +81,10 @@ export default function OwnerView() {
   });
 
   const s = summary.data;
+  const items = notifications.data?.items || [];
+  const st = notifications.data?.summaryStats;
+  const readRate = st?.sent ? `${Math.round((st.read / st.sent) * 100)}%` : '–';
+  const retry = (id) => api(`/notifications/${id}/retry`, { method: 'POST' }).then(notifications.reload, notifications.reload);
   if (!s) return <div className="page muted">{summary.error?.message || 'Loading…'}</div>;
   const [headline, sub] = VERDICT[s.light];
 
@@ -97,6 +124,11 @@ export default function OwnerView() {
             {s.actedOn}/{s.needingAction}
           </div>
           <div className="stat-label">Warnings acted on by team</div>
+        </div>
+        <div className="stat">
+          <div className="stat-value">{readRate}</div>
+          <div className="stat-label">Daily summaries read · 30 days</div>
+          <div className="muted small">target ≥ 70%</div>
         </div>
       </div>
 
@@ -142,7 +174,7 @@ export default function OwnerView() {
       </div>
 
       <div className="panel">
-        <h3>Messages sent to owner</h3>
+        <h3>WhatsApp / SMS messages</h3>
         <div className="table-wrap">
           <table className="timeline">
             <thead>
@@ -151,20 +183,25 @@ export default function OwnerView() {
                 <th>Type</th>
                 <th>To</th>
                 <th>Channel</th>
-                <th>Status</th>
+                <th>Delivery</th>
                 <th>Message</th>
               </tr>
             </thead>
             <tbody>
-              {(notifications.data || []).map((n) => (
+              {items.map((n) => (
                 <tr key={n.id} className="no-click">
                   <td className="mono">{fmtDateTime(n.timestamp)}</td>
-                  <td>{n.type === 'RED_ALERT' ? 'Red alert' : 'Daily summary'}</td>
-                  <td>{n.userName}</td>
+                  <td>
+                    {TYPE_LABEL[n.type] || n.type}
+                    {n.escalationLevel ? <span className="muted small"> · level {n.escalationLevel}</span> : null}
+                  </td>
+                  <td>{n.userName || '–'}</td>
                   <td>
                     {n.channel.toLowerCase()} <span className="muted small">({n.provider})</span>
                   </td>
-                  <td className={n.status === 'SENT' ? 'ok' : 'error'}>{n.status.toLowerCase()}</td>
+                  <td>
+                    <Delivery n={n} onRetry={retry} />
+                  </td>
                   <td className="small msg-cell" title={n.message}>
                     {n.message.split('\n')[1] || n.message.split('\n')[0]}
                   </td>
@@ -172,7 +209,7 @@ export default function OwnerView() {
               ))}
             </tbody>
           </table>
-          {notifications.data?.length === 0 && <p className="muted pad">No messages yet. The daily summary goes out at 8 PM.</p>}
+          {items.length === 0 && notifications.data && <p className="muted pad">No messages yet. The daily summary goes out at 8 PM.</p>}
         </div>
       </div>
 

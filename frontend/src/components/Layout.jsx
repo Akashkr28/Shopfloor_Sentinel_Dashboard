@@ -1,9 +1,10 @@
-import { useRef } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { useRef, useState } from 'react';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { LANGS, t } from '../i18n.js';
-import { LiveContext } from '../live.js';
-import { useLive, useSession } from '../session.jsx';
+import { LiveContext, useLiveRefresh } from '../live.js';
+import { isManager, useFetch, useLive, useSession } from '../session.jsx';
 import { useTheme } from '../theme.js';
+import AccountDialog from './AccountDialog.jsx';
 import Icon from './Icon.jsx';
 
 // [path, label, short label for the phone tab bar, icon]
@@ -18,7 +19,7 @@ const NAV = {
     ['/engineer', 'Dashboard', 'Home', 'dashboard'],
     ['/templates', 'Alert templates', 'Templates', 'template'],
     ['/drills', 'Drill mode', 'Drills', 'target'],
-    ['/setup', 'Machines & users', 'Setup', 'settings'],
+    ['/setup', 'Setup', 'Setup', 'settings'],
     ['/owner', 'Owner view', 'Owner', 'chart'],
     ['/floor', 'Operator screen', 'Floor', 'shield'],
   ],
@@ -73,6 +74,23 @@ function Controls({ lang, connected, compact }) {
   );
 }
 
+/** Monitoring is blind while a gateway is down – say so on every manager screen. */
+function GatewayBanner() {
+  const status = useFetch('/gateway/status');
+  useLiveRefresh(['gateway'], status.reload);
+  const offline = (status.data?.gateways || []).filter((g) => !g.online);
+  if (!offline.length) return null;
+  return (
+    <div className="gw-banner" role="alert">
+      <Icon name="wifi" size={18} />
+      <span>
+        <b>Gateway offline:</b> {offline.map((g) => g.id).join(', ')} – security monitoring is paused. Check the Pi's power and network cable.
+      </span>
+      <Link to="/setup?tab=gateways">Details</Link>
+    </div>
+  );
+}
+
 export default function Layout() {
   const { user } = useSession();
   const subscribers = useRef(new Set());
@@ -81,6 +99,8 @@ export default function Layout() {
   const nav = NAV[user.role];
   // Shopfloor roles get a full-width screen (TV / phone); office roles get a sidebar.
   const isFloor = user.role === 'OPERATOR' || user.role === 'SUPERVISOR';
+  const [account, setAccount] = useState(false);
+  const dialog = account && <AccountDialog onClose={() => setAccount(false)} />;
 
   if (isFloor) {
     return (
@@ -97,15 +117,16 @@ export default function Layout() {
                 ))}
               </nav>
             )}
-            <div className="floor-user">
+            <button className="floor-user" onClick={() => setAccount(true)} title="Your account">
               <span className="avatar">{initials(user.name)}</span>
               <span className="who">{user.name}</span>
-            </div>
+            </button>
             <Controls lang={lang} connected={connected} compact />
           </header>
           <main className="content">
             <Outlet />
           </main>
+          {dialog}
         </div>
       </LiveContext.Provider>
     );
@@ -126,13 +147,13 @@ export default function Layout() {
             ))}
           </nav>
           <div className="side-foot">
-            <div className="user-card">
+            <button className="user-card" onClick={() => setAccount(true)} title="Your account">
               <span className="avatar">{initials(user.name)}</span>
               <span className="user-meta">
                 <span className="who">{user.name}</span>
                 <span className="role">{user.role.toLowerCase()}</span>
               </span>
-            </div>
+            </button>
             <Controls lang={lang} connected={connected} />
           </div>
         </aside>
@@ -143,8 +164,10 @@ export default function Layout() {
         </header>
 
         <main className="content">
+          {isManager(user) && <GatewayBanner />}
           <Outlet />
         </main>
+        {dialog}
 
         <nav className="tab-bar">
           {nav.slice(0, 5).map(([to, , short, icon]) => (

@@ -450,6 +450,37 @@ table.timeline { width: 100%; border-collapse: separate; border-spacing: 0; font
 .wa-bubble { background: #005c4b; color: #e9edef; padding: 0.7rem 0.85rem; border-radius: 12px 2px 12px 12px; white-space: pre-wrap; font-size: 0.9rem; margin-left: 2rem; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3); }
 .wa-foot { display: flex; gap: 0.75rem; align-items: center; padding: 0.85rem 1rem; background: #202c33; flex-wrap: wrap; }
 
+/* ---------- Modal, tabs, setup ---------- */
+.boot { min-height: 100vh; }
+.drawer-backdrop.center { justify-content: center; align-items: center; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.4rem 1.4rem; box-shadow: var(--shadow-lg); animation: pop 0.18s ease-out; max-height: calc(100vh - 2rem); overflow-y: auto; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.modal-head h3 { margin: 0; font-size: 1.05rem; }
+.modal form .btn-primary { width: 100%; }
+.tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 12px; overflow-x: auto; justify-self: start; max-width: 100%; }
+.tabs button { display: inline-flex; align-items: center; gap: 0.4rem; border: 0; background: none; padding: 0.5rem 0.95rem; border-radius: 9px; cursor: pointer; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tabs button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.user-card, .floor-user { border: 0; background: none; cursor: pointer; text-align: left; border-radius: 12px; padding: 0.35rem; margin: -0.35rem 0; transition: background 0.15s; }
+.user-card:hover, .floor-user:hover { background: var(--surface-2); }
+.side-foot .user-card { margin: 0; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 0.45rem 1rem; font-size: 0.9rem; margin-bottom: 0.9rem; }
+.kv > span { color: var(--muted); }
+.rules { margin: 0 0 1.25rem; padding-left: 1.1rem; display: grid; gap: 0.45rem; font-size: 0.9rem; }
+.gw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+.gw-card { display: grid; gap: 0.5rem; padding: 1rem; border-radius: 14px; background: var(--surface-2); border: 1px solid transparent; }
+.gw-card.off { border-color: color-mix(in srgb, var(--red) 40%, transparent); background: var(--red-soft); }
+.gw-stats { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; font-size: 0.8rem; color: var(--muted); }
+.gw-stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.gw-banner { display: flex; align-items: center; gap: 0.75rem; padding: 0.8rem 1rem; margin-bottom: 1.25rem; border-radius: 14px; background: var(--red-soft); color: var(--red-text); font-size: 0.9rem; border: 1px solid color-mix(in srgb, var(--red) 35%, transparent); }
+.gw-banner a { margin-left: auto; font-weight: 700; white-space: nowrap; }
+.delivery { font-size: 0.82rem; font-weight: 600; white-space: nowrap; color: var(--muted); }
+.delivery .ticks { letter-spacing: -0.2em; margin-right: 0.15rem; }
+.delivery.read { color: #3b9eff; }
+.delivery.delivered { color: var(--green-text); }
+.delivery.failed { color: var(--red-text); }
+.delivery.pending { color: var(--amber-text); }
+.link-btn { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 700; cursor: pointer; text-decoration: underline; font-size: inherit; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
   .editor { grid-template-columns: 1fr; }

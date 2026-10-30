@@ -3,12 +3,16 @@
   "private": true,
   "description": "Traffic-light cyber health dashboard for SME factories",
   "scripts": {
-    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install && npm --prefix e2e install",
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix backend start",
     "dev:api": "npm --prefix backend run dev",
     "dev:web": "npm --prefix frontend run dev",
     "seed:reset": "npm --prefix backend run seed",
-    "simulate": "python3 gateway/simulate_events.py"
+    "simulate": "python3 gateway/simulate_events.py",
+    "test": "npm --prefix backend test && npm run test:gateway",
+    "test:gateway": "cd gateway && python3 -m unittest discover -s tests",
+    "test:e2e": "npm run build && npm --prefix e2e test",
+    "test:all": "npm test && npm run test:e2e"
   }
 }

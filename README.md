@@ -1,23 +1,24 @@
 # Shopfloor Sentinel
 
-A traffic-light cyber health dashboard for small and medium factories. A **passive** gateway (Raspberry Pi or an old PC) reports security events. Sentinel turns each one into a **green / amber / red** alert card with a **3-step script in Hindi, Marathi, Tamil or English** (with audio), and sends the owner a **WhatsApp/SMS**: a daily summary, plus an instant message only for red alerts.
+A traffic-light cyber health dashboard for small and medium factories. A **passive** gateway (Raspberry Pi or an old PC) watches the plant network and machine logs. Sentinel turns each finding into a **green / amber / red** alert card with a **3-step script in Hindi, Marathi, Tamil or English** (with audio). It also messages the owner on **WhatsApp or SMS**: instantly for red alerts, with escalation if nobody responds, and with a summary every evening.
 
 ```
- Raspberry Pi / old PC                 Node.js backend (Express + SQLite)            React dashboard
-┌──────────────────────┐  POST /api/  ┌────────────────────────────────────┐  SSE   ┌───────────────────────┐
-│ simulate_events.py   │──events────▶│ map machine + template → severity  │──────▶│ Operator  (big cards) │
-│ passive_monitor.py   │ X-Gateway-  │ store alert · dedup red alerts      │       │ Engineer  (timeline)  │
-│ (read-only, buffers  │   Token     │ JWT + role checks · drills          │◀─────│ Owner     (light)     │
-│  when offline)       │             │ node-cron 8 PM summary              │ REST  │ Templates · Drills    │
-└──────────────────────┘             └───────────────┬────────────────────┘       └───────────────────────┘
-        never talks to PLCs/HMIs                      │ Twilio / WhatsApp Cloud / mock
-                                                      ▼
-                                              Owner's phone 📱
+ Raspberry Pi gateway (read-only)                 Node.js backend (Express + SQLite)               React dashboard
+┌───────────────────────────────┐  POST /api/   ┌──────────────────────────────────────┐  SSE    ┌──────────────────────┐
+│ net_monitor.py  ◀─ SPAN port  │──events──────▶│ machine + template → severity        │───────▶│ Operator  big cards  │
+│   new devices, RDP/SSH/VNC,   │  X-Gateway-   │ alerts · drills · audit log          │        │ Engineer  timeline   │
+│   Modbus writes, scans,       │  Token        │ cookie sessions · roles · rate limits│◀───────│ Owner     traffic    │
+│   PLC→internet, uploads       │──heartbeat──▶│ watchdog: escalation, gateway offline│  REST   │           light      │
+│ log_monitor.py ◀─ syslog/logs │               │ message queue: retry, SMS fallback   │        │ Templates · Drills   │
+│   Windows 4624/4625/7045/…    │               └──────────────────┬───────────────────┘        │ Setup · Audit log    │
+│ buffers events when offline   │                                  │ Twilio / WhatsApp Cloud    └──────────────────────┘
+└───────────────────────────────┘                                  ▼   (delivery webhooks)
+        never transmits to PLCs/HMIs                         Owner & engineer phones 📱
 ```
 
-## Quick start (about 2 minutes)
+## Quick start (demo, about 2 minutes)
 
-You need **Node.js 22.13 or newer**, because the backend uses Node's built-in SQLite and needs no native database driver. You also need **Python 3.8+**, standard library only.
+You need **Node.js 22.13 or newer** (the backend uses Node's built-in SQLite, so there is no native database driver) and **Python 3.8+** (the gateway uses only the standard library).
 
 ```bash
 npm run install:all
@@ -41,23 +42,29 @@ Open http://localhost:4000 and use the one-tap demo logins. Every demo account's
 | `operator` | OPERATOR | Operator screen | Hindi |
 | `operator2` | OPERATOR | Operator screen | Marathi |
 
-In a second terminal, start the simulated gateway:
+Then feed it events. Pick one of the three:
+
+**Real network detector on a recorded attack.** This replays a normal hour on the plant network, then an attack: a new laptop, a port scan, an RDP brute force, a Modbus write and an HMI calling out to a bad host.
+
+```bash
+python3 gateway/make_demo_pcap.py && python3 gateway/net_monitor.py --pcap gateway/demo.pcap
+```
+
+**Random simulated events** every 5–15 seconds:
 
 ```bash
 python3 gateway/simulate_events.py --interval 5 15
 ```
 
-For a live demo, fire specific events:
+**One specific event:**
 
 ```bash
 python3 gateway/simulate_events.py --once --type USB_INSERT --machine PRESS_LINE_1_HMI
 ```
 
-```bash
-python3 gateway/simulate_events.py --burst 10
-```
+While `NOTIFY_PROVIDER=mock` (the default), owner messages print in the backend terminal.
 
-Owner messages print in the backend terminal while `NOTIFY_PROVIDER=mock`, which is the default. See [Real WhatsApp / SMS](#real-whatsapp--sms).
+For a real factory, follow **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. It covers the Pi and mirror port, HTTPS, systemd services, Windows log forwarding, Twilio or WhatsApp setup with the message templates to get approved, backups, and a security checklist.
 
 ### Development mode (hot reload)
 
@@ -77,133 +84,132 @@ The Vite dev server runs on http://localhost:5173 and proxies `/api` to port 400
 npm run seed:reset
 ```
 
-## A 5-minute demo script
+## Tests
 
-1. **Operator** (`operator`, Hindi): the screen is green, "सब ठीक है" ("all clear").
-2. **Engineer** → Dashboard → **Simulate event** → *USB drive plugged into machine* on Press Line 1. Within a second the operator screen turns red and chimes. The backend terminal prints the owner's WhatsApp message.
-3. Simulate the same event again. It is **deduplicated**: no second owner message within 30 minutes.
-4. On the operator screen, tap the card, switch Hindi / मराठी / தமிழ், press **सुनें** ("listen"), and tick **मैंने यह किया** ("I did this") for each step. The card shows the progress dots, and the engineer timeline shows `3/3` and *resolved*.
-5. **Engineer** → Drill mode → start a drill for "Shift B". It appears on the operator screen with a dashed **DRILL** label, and the owner is *not* messaged. Complete it, then look at the scorecard: time to step 1, steps missed, % completed.
-6. **Engineer** → Alert templates: edit the Marathi wording, pick an icon, **Record** audio in the browser, then save. The operator preview updates live.
-7. **Owner**: big traffic light, red alerts with "operator acted: yes/no", **Preview today's WhatsApp summary** → *Send to owner now*.
-
-## What's in the repo
-
-```
-backend/               Node.js + Express API
-  src/server.js        app, static hosting of the React build, 8 PM cron
-  src/db.js            SQLite schema (node:sqlite)
-  src/auth.js          JWT login, authMiddleware, roleMiddleware, gateway shared secret
-  src/routes/api.js    all REST endpoints
-  src/services/
-    alerts.js          event → machine/template mapping, severity rules, status machine
-    notify.js          red-alert dedup + Twilio / WhatsApp Cloud / mock delivery
-    summary.js         daily owner summary + traffic light
-    live.js            Server-Sent Events hub (alerts appear in < 1 s)
-  src/seedData.js      demo users, 5 machines, 7 templates × 4 languages
-frontend/              React 18 + Vite + React Router (plain CSS, no UI kit)
-  src/pages/           OperatorView, EngineerView, TemplateEditor, DrillMode, OwnerView, Setup, Login
-  src/components/      AlertCard, AlertDetail (3-step drawer), AudioButton, Icon set
-gateway/               Python, stdlib only
-  simulate_events.py   random / targeted / burst events for the hackathon
-  passive_monitor.py   real-deployment starter: tails auth.log / kern.log (read-only)
-  sentinel_client.py   POST with offline buffer (buffer.jsonl) and retry
-  config.json          backend URL, gateway token, machine identifiers
+```bash
+npm test
 ```
 
-## Features
+This runs the backend API suite and the gateway detector tests. It needs no browser and no network.
 
-| Requirement | Where |
+```bash
+npm run test:e2e
+```
+
+This builds the dashboard, starts a real server on a temporary database, and drives Chrome through the main flows. Set `CHROME_PATH` if Chrome isn't in the usual place.
+
+| Suite | What it covers |
 |---|---|
-| Traffic-light alerts (colour, icon, local-language text, 3 steps) | `AlertCard.jsx`, `AlertDetail.jsx`, `OperatorView.jsx` |
-| Localized scripts in hi / mr / ta with English fallback | templates in `seedData.js`; fallback in `i18n.js#pickLoc` |
-| Audio playback | engineer-recorded audio per language; falls back to the device's text-to-speech |
-| Owner WhatsApp/SMS: daily summary + instant red only | `notify.js`, `summary.js`, cron in `server.js` |
-| Red-alert dedup (alert fatigue) | first red per *type × machine* per `RED_DEDUP_MINUTES` |
-| Simulated gateway | `gateway/simulate_events.py` + **Simulate event** panel |
-| Drill mode, scored and logged | `POST /api/drill/start`, `GET /api/drills`, `DrillMode.jsx` |
-| Template editor (icons, severity, 4 languages, audio) | `TemplateEditor.jsx` |
-| Role-based access (JWT + role flags) | `auth.js`, route guards in `main.jsx` |
-| Logs for external consultants | **Export CSV** on the engineer dashboard |
-| Large shopfloor screen + low-end Android | responsive CSS; extra-large cards at ≥ 1800 px |
+| `backend/test/api.test.js` (33 tests with the migration test) | HttpOnly cookie and CSRF, login rate limits, sign-out on password change, disabled users, role-based access, owner-account protection, gateway auth and validation, severity rules, red-alert dedup, drills never messaging owners, escalation levels, gateway-offline and back-online messages, retry with backoff, WhatsApp templates, Twilio and WhatsApp webhook signatures, read receipts never going backwards, CSV formula injection, audit log, security headers |
+| `backend/test/migrate.test.js` | A prototype database upgrades in place without losing data |
+| `gateway/tests/` (26 tests) | Packet parsing (Ethernet, ARP, TCP, Modbus), pcap round-trip, device learning and baseline persistence, remote-access and burst detection, trusted engineering stations, Modbus writes, port scans, PLC-to-internet traffic, large uploads, Linux auth and USB logs, Windows 4624 / 4625 / 7045 / 1102 / 1116 / 6416 in NXLog JSON and key=value formats |
+| `e2e/browser.test.js` (6 flows) | A red alert reaches the operator's phone screen in under 5 s; the Hindi 3-step script is ticked through to resolved; the session cookie is invisible to JavaScript; an engineer edits Marathi wording; a drill is labelled and scored; the owner's WhatsApp preview is sent and shows delivery ticks; a password change; the gateway-offline banner; all Setup tabs |
 
-### Roles
+## Detection (gateway)
+
+| Monitor | Finding | Event | Severity |
+|---|---|---|---|
+| `net_monitor.py` (mirror port) | A MAC address not seen during the learning period | `NEW_DEVICE` | amber |
+| | SSH / Telnet / RDP / VNC / TeamViewer / AnyDesk to a machine from an untrusted host | `UNK_REMOTE_LOGIN` | amber; **red** at 10+ attempts or from the internet |
+| | Modbus/TCP write or programming request from a computer that isn't an engineering station | `PLC_WRITE` | **red** |
+| | Port scan (30+ targets in 60 s) | `ABNORMAL_TRAFFIC` | **red** |
+| | PLC/HMI talking to the internet; known-bad ports (4444, 6667, …); large uploads | `ABNORMAL_TRAFFIC` | amber; **red** if bad port or ≥ 100 MB |
+| `log_monitor.py` (files + syslog udp/5514) | SSH or Windows 4625 failed-logon bursts | `UNK_REMOTE_LOGIN` | **red** at 5+ |
+| | Successful SSH, or RDP (4624 type 10), from an untrusted IP | `UNK_REMOTE_LOGIN` | **red** |
+| | USB storage (Linux kernel, 6416, DriverFrameworks, USBSTOR) | `USB_INSERT` | **red** |
+| | New service (7045 / 4697), audit log cleared (1102 / 104), Defender detection (1116 / 1117) | `SUSPICIOUS_SOFTWARE` | **red** |
+
+Each finding is reported at most once per cooldown (default 10 min), so a brute-force run becomes one event, not hundreds. When the backend is unreachable, events are saved to `buffer.jsonl` (capped) and sent once it is back. Every monitor sends a heartbeat each minute.
+
+## Owner messaging
+
+| When | Who gets it |
+|---|---|
+| A red alert (the same alert on the same machine at most once per 30 min) | Owners |
+| A red alert nobody acknowledged for 10 min | Owners + engineers |
+| A red alert still unresolved after 60 min | Owners |
+| A red alert marked handled | Owners ("✅ handled by …") |
+| A gateway silent for 10 min, and again when it is back | Owners + engineers |
+| 8 PM daily summary | Owners |
+| Drills | Nobody |
+
+Every message is queued in the database. If sending fails it is retried with backoff (30 s, 2 min, 10 min). With Twilio, a WhatsApp message that keeps failing is re-sent as SMS. Delivery receipts (sent / delivered / read) come back through signed webhooks and show as ticks on the owner page, which also shows the 30-day read rate of the daily summary (target ≥ 70%). All thresholds are in `backend/.env.example`.
+
+## Security
+
+- **Sessions:** HttpOnly, `SameSite=Strict` cookie; `Secure` in production. The browser never handles the token, and the live-update stream is authenticated by the same cookie.
+- **CSRF:** writes made with the cookie must carry `X-Sentinel-Request`. Scripts may use `Authorization: Bearer <token>` instead.
+- **Login protection:** rate limits per IP and per account, bcrypt hashing, and a constant-time response for unknown users.
+- **Sign-out on change:** changing or resetting a password signs out every older session, and disabling a user takes effect immediately.
+- **Roles:** enforced on every endpoint. Only owners can manage owner accounts, and the last active owner can't be removed.
+- **Gateway:** a shared secret compared in constant time, plus strict validation, size limits and a rate limit on ingest.
+- **Headers:** a Content Security Policy, plus `X-Frame-Options: DENY`, `nosniff` and `no-referrer`. CSV exports are protected against formula injection.
+- **Audit log:** logins, failed and blocked logins, account changes, template edits, drills, exports and test messages (**Setup → Audit log**).
+- **Startup check:** production refuses to start with the development secrets.
+
+## Roles
 
 | | Operator | Supervisor | Engineer | Owner |
 |---|---|---|---|---|
 | Active alerts (last 24h), 3-step script, tick steps | ✓ | ✓ | ✓ | ✓ |
 | Start drills, add training notes, mark handled | | ✓ | ✓ | |
 | Full timeline, filters, raw gateway data, CSV export | | | ✓ | ✓ |
-| Templates, machines, users, simulate events | | | ✓ | ✓ |
-| Owner summary, notification log | | | ✓ | ✓ |
-
-### Severity rules
-
-Each event gets its template's default severity. Two simple rules can raise it:
-
-- `UNK_REMOTE_LOGIN` → **red** if `failedAttempts ≥ 5` or `loginSucceeded`.
-- `ABNORMAL_TRAFFIC` → **red** if `mbOut ≥ 100` or `knownBadDestination`.
-
-An unknown `eventTypeKey` uses the `UNKNOWN_EVENT` template. An unknown `machineIdentifier` is auto-registered as "Unmapped: …" so no event is lost; rename it under **Machines & users**.
-
-Alert status goes from `OPEN` to `ACKNOWLEDGED` (first tick) to `RESOLVED` (all 3 steps, or a supervisor/engineer marks it handled).
+| Templates, machines, users, gateways, notifications, audit log | | | ✓ | ✓ |
+| Manage owner accounts | | | | ✓ |
+| Change own password | ✓ | ✓ | ✓ | ✓ |
 
 ## API
 
-All routes are under `/api`. Every route except `POST /auth/login` and `POST /events` needs `Authorization: Bearer <jwt>`.
+All routes are under `/api`.
 
-| Method | Path | Roles |
+| Method | Path | Who |
 |---|---|---|
-| POST | `/auth/login` → `{ token, user }` | public |
-| GET/PATCH | `/me` (PATCH sets `preferredLanguage`) | any |
-| POST | `/events` (single object or array), header `X-Gateway-Token` | gateway |
-| GET | `/alerts?severity&machineId&status&isDrill&since&until&activeOnly` | any (operators: last 24h) |
-| GET | `/alerts/:id` | any |
-| POST | `/alerts/:id/actions` `{ actionType: ACKNOWLEDGE \| STEP_COMPLETED \| NOTE \| RESOLVE, stepNumber }` | any (RESOLVE: not operator) |
+| POST | `/auth/login` → sets the cookie, returns `{ user, token }` · GET `/auth/session` · POST `/auth/logout` | public |
+| GET/PATCH | `/me` · POST `/me/password` | any |
+| POST | `/events` (single object or array of up to 100) · `/gateway/heartbeat`, both with `X-Gateway-Token` and `X-Gateway-Id` headers | gateway |
+| GET | `/gateway/status` | any |
+| GET | `/alerts?severity&machineId&status&isDrill&since&until&activeOnly` · `/alerts/:id` | any (operators: last 24h, no raw data) |
+| POST | `/alerts/:id/actions` `{ actionType: ACKNOWLEDGE \| STEP_COMPLETED \| NOTE \| RESOLVE, stepNumber }` | any (NOTE/RESOLVE: not operators) |
 | GET | `/alerts/export.csv` | owner, engineer |
-| GET/POST/PUT | `/machines`, `/machines/:id` | GET any; write owner/engineer |
-| GET/POST/PUT | `/alert-templates`, `/alert-templates/:id` | GET any; write owner/engineer |
-| GET/POST | `/alert-templates/:id/localizations` | GET any; write owner/engineer |
-| POST/DELETE | `/alert-templates/:id/localizations/:lang/audio` (raw `audio/*` body) | owner, engineer |
-| POST | `/simulate` `{ eventTypeKey, machineId }` | owner, engineer |
-| POST | `/drill/start` `{ machineId, alertTemplateId, team }` | engineer, supervisor |
-| GET | `/drills` (response times, steps missed, notes) | engineer, supervisor, owner |
-| GET | `/stats` | owner, engineer |
+| GET/POST/PUT | `/machines`, `/machines/:id` | GET any; write owner, engineer |
+| GET/POST/PUT | `/alert-templates[/:id]`, `/alert-templates/:id/localizations`, POST/DELETE `…/:lang/audio` | GET any; write owner, engineer |
+| GET/POST/PATCH | `/users`, `/users/:id` · POST `/users/:id/password` | owner, engineer |
+| POST | `/simulate` · GET `/stats` · GET `/audit?action=` | owner, engineer |
+| POST | `/drill/start` · GET `/drills` | engineer, supervisor (GET also owner) |
 | GET | `/owner/daily-summary` · POST `/owner/daily-summary/send` | owner, engineer |
-| GET | `/notifications` | owner, engineer |
-| GET | `/users` · POST `/users` | owner, engineer |
-| GET | `/stream?token=` (Server-Sent Events) | any |
+| GET | `/notifications` · `/notifications/config` · POST `/notifications/test` · `/notifications/:id/retry` | owner, engineer |
+| POST | `/webhooks/twilio` · GET/POST `/webhooks/whatsapp` | provider (signature-verified) |
+| GET | `/stream` (Server-Sent Events) | any |
 
-Example gateway event:
+## Repository layout
 
-```json
-{
-  "eventTypeKey": "USB_INSERT",
-  "machineIdentifier": "PRESS_LINE_1_HMI",
-  "timestamp": "2026-10-30T12:34:56Z",
-  "details": { "usbVendor": "Generic", "port": "USB2_FRONT" }
-}
+```
+backend/        Node.js + Express API
+  src/app.js        the Express app (security headers, CORS, static dashboard)
+  src/server.js     boot: config check, seed, cron, watchdog, graceful shutdown
+  src/db.js         SQLite schema + versioned migrations
+  src/auth.js       cookie/Bearer sessions, roles, gateway secret
+  src/security.js   rate limits, CSRF guard, validation, audit log
+  src/routes/       api.js (REST) · webhooks.js (Twilio / WhatsApp receipts)
+  src/services/     alerts · notify (queue, providers, templates) · watchdog (escalation, gateways) · summary · live (SSE)
+  test/             API + migration tests (node:test)
+frontend/       React 18 + Vite – operator, engineer, owner, templates, drills, setup
+gateway/        Python, standard library only
+  net_monitor.py      passive network detector (live AF_PACKET or --pcap)
+  log_monitor.py      log files + syslog receiver (Linux and Windows events)
+  simulate_events.py  random / targeted demo events
+  make_demo_pcap.py   writes a demo attack capture
+  sentinel_net.py     packet parsing, pcap reader/writer, capture
+  sentinel_client.py  buffered sender, heartbeat, cooldowns
+  systemd/            service units for the Pi
+  tests/              detector tests (unittest)
+e2e/            Chrome end-to-end tests (puppeteer-core)
+docs/           DEPLOYMENT.md
 ```
 
-## Real WhatsApp / SMS
+## Known limits
 
-Copy `backend/.env.example` to `backend/.env`; it is loaded automatically. Then set one of these:
-
-- **Twilio**: `NOTIFY_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, and `NOTIFY_CHANNEL=WHATSAPP` or `SMS`. The Twilio WhatsApp sandbox works for a hackathon: the owner's phone must first send the sandbox join code.
-- **Meta WhatsApp Cloud API**: `NOTIFY_PROVIDER=whatsapp_cloud`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`. Free-form text only reaches numbers that messaged you in the last 24 hours. Production use needs approved message templates.
-
-Owner phone numbers come from users with role OWNER (**Machines & users**). Every attempt is logged in `notification_logs` and shown on the owner page.
-
-## Deploying on a Raspberry Pi
-
-1. Install Node 22 LTS and Python 3 on the Pi. Clone the repo, then run `npm run install:all && npm run build`.
-2. Set `JWT_SECRET` and `GATEWAY_TOKEN` in `backend/.env`. Put the same token in `gateway/config.json`.
-3. Run `npm start` under systemd or pm2. The dashboard is at `http://<pi-ip>:4000`.
-4. Connect the Pi to a **SPAN/mirror port** if your switch has one, then run `passive_monitor.py` (log-based) or simulate. The gateway only reads and reports; it never sends commands to PLCs or HMIs.
-
-## Prototype limits
-
-- The JWT is kept in memory and in `sessionStorage`, so a refresh on the shopfloor TV keeps the operator logged in. Use HTTPS and HTTP-only cookies for production.
-- The SSE stream authenticates with `?token=`, because `EventSource` can't send headers. Put HTTPS in front of it.
-- Text-to-speech quality for Marathi and Tamil depends on the device's installed voices. Recorded audio is the reliable option.
-- Network-traffic detection (`ABNORMAL_TRAFFIC`, `NEW_DEVICE`) is simulated. A real deployment would add Zeek or Suricata on the mirror port and post the same JSON.
+- **Industrial protocols:** only Modbus/TCP writes are decoded. S7comm, EtherNet/IP and OPC UA traffic is still covered by the device, remote-access, scan and internet rules, but not decoded.
+- **Live capture:** needs Linux (`AF_PACKET`). On macOS and Windows, analyse `.pcap` files instead.
+- **Text-to-speech:** quality for Marathi and Tamil depends on the device's installed voices. Recorded audio is the reliable option.
+- **WhatsApp outside the 24-hour window:** business-initiated messages need approved templates (see the deployment guide). Until they are approved, use SMS through Twilio.

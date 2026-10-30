@@ -1,0 +1,24 @@
+# Passive network monitor on the mirror/SPAN port. Copy to /etc/systemd/system/, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sentinel-net-monitor
+[Unit]
+Description=Shopfloor Sentinel – passive network monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sentinel
+WorkingDirectory=/opt/shopfloor-sentinel/gateway
+ExecStart=/usr/bin/python3 -u net_monitor.py
+# Raw sockets for listening only; no other privileges.
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/shopfloor-sentinel/gateway
+ProtectHome=true
+PrivateTmp=true
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

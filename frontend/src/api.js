@@ -1,45 +1,32 @@
-// JWT lives in memory, mirrored to sessionStorage so a page refresh on the
-// shopfloor screen doesn't log the operator out (cleared when the tab closes).
-const KEY = 'sentinel.session';
-let session = null;
-try {
-  session = JSON.parse(sessionStorage.getItem(KEY) || 'null');
-} catch {
-  session = null;
-}
-
-export const getSession = () => session;
-export const getToken = () => session?.token || null;
-
-export function setSession(next) {
-  session = next;
-  try {
-    if (next) sessionStorage.setItem(KEY, JSON.stringify(next));
-    else sessionStorage.removeItem(KEY);
-  } catch {
-    /* private mode – memory only */
-  }
-}
+// The session lives in an HttpOnly cookie set by the backend, so page scripts
+// never see the token. Every request carries X-Sentinel-Request, which the
+// backend requires on writes as CSRF protection.
 
 export async function api(path, { method = 'GET', body, raw = false, headers = {} } = {}) {
-  const token = getToken();
   const res = await fetch(`/api${path}`, {
     method,
+    credentials: 'same-origin',
     headers: {
+      'X-Sentinel-Request': '1',
       ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
     body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   });
-  if (res.status === 401 && token && path !== '/auth/login') {
-    setSession(null);
-    window.dispatchEvent(new Event('sentinel:logout'));
-  }
+  if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('sentinel:logout'));
   const isJson = (res.headers.get('content-type') || '').includes('json');
   const data = isJson ? await res.json() : await res.text();
-  if (!res.ok) throw new Error((isJson && data.error) || res.statusText);
+  if (!res.ok) throw Object.assign(new Error((isJson && data.error) || res.statusText), { status: res.status });
   return data;
+}
+
+/** Download a file from the API (the cookie authenticates it). */
+export async function download(path, filename) {
+  const res = await fetch(`/api${path}`, { credentials: 'same-origin', headers: { 'X-Sentinel-Request': '1' } });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  Object.assign(document.createElement('a'), { href: url, download: filename }).click();
+  URL.revokeObjectURL(url);
 }
 
 export const qs = (params) => {

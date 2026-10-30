@@ -1,0 +1,12 @@
+{
+  "name": "shopfloor-sentinel-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser end-to-end tests (real backend + built frontend + Chrome)",
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 '*.test.js'"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.10.4"
+  }
+}

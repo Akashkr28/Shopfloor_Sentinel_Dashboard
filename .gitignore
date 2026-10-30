@@ -6,3 +6,5 @@ gateway/buffer.jsonl
 __pycache__/
 .env
 .DS_Store
+gateway/demo.pcap
+gateway/state/

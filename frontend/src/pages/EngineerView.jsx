@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, getToken, qs } from '../api.js';
+import { api, download, qs } from '../api.js';
 import AlertDetail from '../components/AlertDetail.jsx';
 import Icon from '../components/Icon.jsx';
 import { fmtDateTime, pickLoc } from '../i18n.js';
@@ -82,12 +82,7 @@ export default function EngineerView() {
   const s = stats.data;
   const maxMachine = Math.max(1, ...(s?.topMachines || []).map((m) => m.n));
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
-  const exportCsv = async () => {
-    const res = await fetch(`/api/alerts/export.csv${qs({ since: sinceIso })}`, { headers: { Authorization: `Bearer ${getToken()}` } });
-    const url = URL.createObjectURL(await res.blob());
-    Object.assign(document.createElement('a'), { href: url, download: 'sentinel-alerts.csv' }).click();
-    URL.revokeObjectURL(url);
-  };
+  const exportCsv = () => download(`/alerts/export.csv${qs({ since: sinceIso })}`, 'sentinel-alerts.csv').catch((e) => alert(e.message));
 
   return (
     <div className="page">

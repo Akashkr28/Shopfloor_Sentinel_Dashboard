@@ -1,8 +1,11 @@
 {
   "backendUrl": "http://localhost:4000/api",
   "gatewayToken": "dev-gateway-token",
-  "intervalSeconds": [30, 60],
+  "gatewayId": "pi-shed-a",
   "bufferFile": "buffer.jsonl",
+  "stateDir": "state",
+
+  "intervalSeconds": [30, 60],
   "machines": [
     "PRESS_LINE_1_HMI",
     "PRESS_LINE_2_HMI",
@@ -16,6 +19,44 @@
     "UNK_REMOTE_LOGIN": 2,
     "NEW_DEVICE": 1,
     "USB_INSERT": 1,
-    "SUSPICIOUS_SOFTWARE": 0.3
+    "SUSPICIOUS_SOFTWARE": 0.3,
+    "PLC_WRITE": 0.3
+  },
+
+  "network": {
+    "interface": "eth0",
+    "internalNetworks": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+    "learnMinutes": 60,
+    "defaultMachine": "OFFICE_LAN",
+    "assets": [
+      { "identifier": "PRESS_LINE_1_HMI", "role": "hmi", "ips": ["192.168.10.21"], "hostnames": ["PRESS1-HMI"] },
+      { "identifier": "PRESS_LINE_2_HMI", "role": "hmi", "ips": ["192.168.10.22"], "hostnames": ["PRESS2-HMI"] },
+      { "identifier": "CNC_CELL_3_PC", "role": "pc", "ips": ["192.168.10.31"], "hostnames": ["CNC3-PC"] },
+      { "identifier": "PACKAGING_HMI_A", "role": "hmi", "ips": ["192.168.10.41"], "hostnames": ["PACK-HMI-A"] },
+      { "identifier": "PRESS_LINE_1_HMI", "role": "plc", "ips": ["192.168.10.121"] }
+    ],
+    "engineeringStations": ["192.168.10.5"],
+    "trustedRemoteSources": ["192.168.10.5"],
+    "ignoreMacs": [],
+    "outboundMbThreshold": 50,
+    "windowSeconds": 300,
+    "scanDistinctTargets": 30,
+    "scanWindowSeconds": 60,
+    "remoteBurstThreshold": 10,
+    "cooldownMinutes": 10,
+    "badPorts": [4444, 6667, 1337, 31337]
+  },
+
+  "logs": {
+    "files": [
+      { "path": "/var/log/auth.log", "machine": "OFFICE_LAN" },
+      { "path": "/var/log/kern.log", "machine": "OFFICE_LAN" }
+    ],
+    "syslogBind": "0.0.0.0",
+    "syslogPort": 5514,
+    "failedLoginThreshold": 5,
+    "failedLoginWindowSeconds": 300,
+    "trustedIps": [],
+    "cooldownMinutes": 10
   }
 }

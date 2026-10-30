@@ -37,7 +37,9 @@ function Home() {
 }
 
 function App() {
-  const { user } = useSession();
+  const { user, ready } = useSession();
+  // Wait for the cookie check so a refresh doesn't flash the login page.
+  if (!ready) return <div className="boot" aria-busy="true" />;
   return (
     <Routes>
       <Route path="/login" element={user ? <Home /> : <Login />} />

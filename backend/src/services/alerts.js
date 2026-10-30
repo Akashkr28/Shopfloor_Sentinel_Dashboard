@@ -1,6 +1,6 @@
 import { db, nowIso } from '../db.js';
 import { broadcast } from './live.js';
-import { notifyRedAlert } from './notify.js';
+import { notifyRedAlert, notifyResolved } from './notify.js';
 
 export const SEVERITIES = ['GREEN', 'AMBER', 'RED'];
 export const STATUSES = ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'];
@@ -27,9 +27,11 @@ export function decideSeverity(template, details = {}) {
   };
   if (template.eventTypeKey === 'UNK_REMOTE_LOGIN') {
     if (details.loginSucceeded === true || Number(details.failedAttempts) >= 5) bump('RED');
+    // From the network monitor: a burst of connection attempts, or a session coming from the internet.
+    if (Number(details.connectionAttempts) >= 10 || details.externalSource === true) bump('RED');
   }
   if (template.eventTypeKey === 'ABNORMAL_TRAFFIC') {
-    if (Number(details.mbOut) >= 100 || details.knownBadDestination === true) bump('RED');
+    if (Number(details.mbOut) >= 100 || details.knownBadDestination === true || details.kind === 'port-scan') bump('RED');
   }
   if (details.severityOverride && SEVERITIES.includes(details.severityOverride)) sev = details.severityOverride;
   return sev;
@@ -49,25 +51,28 @@ function resolveMachine(identifier) {
 
 /** Turn a raw gateway / simulated / drill event into a stored alert and fan it out. */
 export async function ingestEvent(payload, { isDrill = false, drillTeam = null, startedBy = null } = {}) {
-  const { eventTypeKey, machineIdentifier } = payload;
-  if (!eventTypeKey || !machineIdentifier) {
-    const err = new Error('eventTypeKey and machineIdentifier are required');
-    err.status = 400;
-    throw err;
-  }
+  const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
+  if (!payload || typeof payload !== 'object') throw bad('Event must be a JSON object');
+  const eventTypeKey = String(payload.eventTypeKey || '').trim().toUpperCase();
+  const machineIdentifier = String(payload.machineIdentifier || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_]{2,64}$/.test(eventTypeKey)) throw bad('eventTypeKey must be 2–64 characters A–Z, 0–9, _');
+  if (!/^[A-Z0-9_.:-]{2,64}$/.test(machineIdentifier)) throw bad('machineIdentifier must be 2–64 characters A–Z, 0–9, _ . : -');
+  if (payload.details !== undefined && (typeof payload.details !== 'object' || Array.isArray(payload.details) || payload.details === null)) throw bad('details must be an object');
+  if (JSON.stringify(payload).length > 16000) throw bad('Event payload too large');
   const template = templateByKey(eventTypeKey) || templateByKey('UNKNOWN_EVENT');
   const machine = resolveMachine(machineIdentifier);
   const severity = decideSeverity(template, payload.details);
 
   let ts = payload.timestamp ? new Date(payload.timestamp) : new Date();
-  if (Number.isNaN(ts.getTime())) ts = new Date();
+  // Bad or far-future gateway clocks would break ordering and escalation – use arrival time instead.
+  if (Number.isNaN(ts.getTime()) || ts.getTime() > Date.now() + 5 * 60000) ts = new Date();
 
   const r = db
     .prepare(
       `INSERT INTO alert_events (machineId, alertTemplateId, severity, timestamp, isDrill, rawPayload, drillTeam, drillStartedByUserId)
        VALUES (?,?,?,?,?,?,?,?)`,
     )
-    .run(machine.id, template.id, severity, ts.toISOString(), isDrill ? 1 : 0, JSON.stringify(payload), drillTeam, startedBy);
+    .run(machine.id, template.id, severity, ts.toISOString(), isDrill ? 1 : 0, JSON.stringify({ ...payload, eventTypeKey, machineIdentifier }), drillTeam, startedBy);
   const alert = getAlert(Number(r.lastInsertRowid));
   broadcast('alert', { id: alert.id, severity: alert.severity, isDrill: alert.isDrill });
 
@@ -146,6 +151,7 @@ export function recordAction(alertId, user, { actionType, stepNumber, notes }) {
   }
   if (status !== alert.status) db.prepare('UPDATE alert_events SET status = ? WHERE id = ?').run(status, alertId);
   const updated = getAlert(alertId, { withActions: true });
+  if (status === 'RESOLVED' && alert.status !== 'RESOLVED') notifyResolved(updated, user);
   broadcast('alert-updated', { id: alertId, status });
   return updated;
 }

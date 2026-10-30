@@ -15,7 +15,7 @@ import argparse
 import random
 import time
 
-from sentinel_client import load_config, send_events, utc_now
+from sentinel_client import load_config, send_events, start_heartbeat, utc_now
 
 
 def details_for(event_type):
@@ -46,6 +46,8 @@ def details_for(event_type):
         return {"mac": mac, "vendorHint": random.choice(["Unknown", "Xiaomi", "TP-Link", "Dell"]), "dhcpHostname": random.choice(["android-7f3a", "DESKTOP-K2J", ""])}
     if event_type == "SUSPICIOUS_SOFTWARE":
         return {"process": random.choice(["update_svc.exe", "winlogin32.exe", "ransom_note.txt"]), "hash": f"{random.getrandbits(64):016x}"}
+    if event_type == "PLC_WRITE":
+        return {"protocol": "Modbus/TCP", "sourceIp": f"192.168.10.{random.randint(60, 90)}", "plcIp": "192.168.10.121", "function": 16, "functionName": "Write Multiple Registers"}
     if event_type == "ROUTINE_CHECK":
         return {"check": random.choice(["heartbeat", "open-ports", "login-audit"]), "result": "ok"}
     return {}
@@ -93,6 +95,7 @@ def main():
             emit(cfg, [make_event(cfg, args.type, args.machine)])
             time.sleep(1)
         return
+    start_heartbeat(cfg, ["simulator"])
     try:
         while True:
             emit(cfg, [make_event(cfg, args.type, args.machine)])

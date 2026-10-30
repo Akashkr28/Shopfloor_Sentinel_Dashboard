@@ -1,46 +1,52 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { api, getSession, getToken, setSession } from './api.js';
+import { api } from './api.js';
 
 const SessionCtx = createContext(null);
 
 export function SessionProvider({ children }) {
-  const [session, setState] = useState(getSession());
+  // undefined = still checking the cookie, null = logged out
+  const [user, setUser] = useState(undefined);
+
+  useEffect(() => {
+    api('/auth/session')
+      .then((s) => setUser(s.user))
+      .catch(() => setUser(null));
+  }, []);
 
   const login = useCallback(async (username, password) => {
     const s = await api('/auth/login', { method: 'POST', body: { username, password } });
-    setSession(s);
-    setState(s);
+    setUser(s.user);
     return s.user;
   }, []);
 
-  const logout = useCallback(() => {
-    setSession(null);
-    setState(null);
+  const logout = useCallback(async () => {
+    await api('/auth/logout', { method: 'POST' }).catch(() => {});
+    setUser(null);
   }, []);
 
-  const setLanguage = useCallback(async (preferredLanguage) => {
-    const next = { ...getSession(), user: { ...getSession().user, preferredLanguage } };
-    setSession(next);
-    setState(next);
+  const setLanguage = useCallback((preferredLanguage) => {
+    setUser((u) => ({ ...u, preferredLanguage }));
     api('/me', { method: 'PATCH', body: { preferredLanguage } }).catch(() => {});
   }, []);
 
   useEffect(() => {
-    const onLogout = () => setState(null);
+    const onLogout = () => setUser(null);
     window.addEventListener('sentinel:logout', onLogout);
     return () => window.removeEventListener('sentinel:logout', onLogout);
   }, []);
 
-  return <SessionCtx.Provider value={{ user: session?.user || null, login, logout, setLanguage }}>{children}</SessionCtx.Provider>;
+  return <SessionCtx.Provider value={{ user, ready: user !== undefined, login, logout, setLanguage }}>{children}</SessionCtx.Provider>;
 }
 
 export const useSession = () => useContext(SessionCtx);
 
 export const HOME_BY_ROLE = { OWNER: '/owner', ENGINEER: '/engineer', SUPERVISOR: '/floor', OPERATOR: '/floor' };
+export const isManager = (u) => u?.role === 'OWNER' || u?.role === 'ENGINEER';
 
 /**
- * Subscribe to the backend's Server-Sent Events stream. `onEvent` fires for
- * alert / alert-updated / notification / templates / machines events.
+ * Subscribe to the backend's Server-Sent Events stream (authenticated by the
+ * session cookie). `onEvent` fires for alert / alert-updated / notification /
+ * templates / machines / gateway events.
  */
 export function useLive(onEvent) {
   const [connected, setConnected] = useState(false);
@@ -48,10 +54,8 @@ export function useLive(onEvent) {
   handler.current = onEvent;
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return undefined;
-    const es = new EventSource(`/api/stream?token=${encodeURIComponent(token)}`);
-    const types = ['alert', 'alert-updated', 'notification', 'templates', 'machines'];
+    const es = new EventSource('/api/stream', { withCredentials: true });
+    const types = ['alert', 'alert-updated', 'notification', 'templates', 'machines', 'gateway'];
     const listeners = types.map((type) => {
       const fn = (e) => handler.current?.(type, JSON.parse(e.data || '{}'));
       es.addEventListener(type, fn);

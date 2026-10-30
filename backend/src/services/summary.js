@@ -74,17 +74,30 @@ export function buildDailySummary(when = new Date()) {
     .get(start, end).n;
 
   const summary = { date, light, counts, total: rows.length, topIssues, reds, unresolvedRed, actedOn, needingAction: nonGreen.length, drills };
-  return { ...summary, message: formatSummaryMessage(summary) };
+  return { ...summary, message: formatSummaryMessage(summary), templateParams: summaryTemplateParams(summary) };
 }
 
 const LIGHT_EMOJI = { RED: '🔴', AMBER: '🟠', GREEN: '🟢' };
 
+/** Variables for an approved WhatsApp "daily summary" template ({{1}}…{{5}}). */
+export function summaryTemplateParams(s) {
+  return [
+    s.date,
+    VERDICT[s.light],
+    `Red ${s.counts.RED}, Amber ${s.counts.AMBER}, Green ${s.counts.GREEN}; team responded to ${s.actedOn} of ${s.needingAction}`,
+    s.topIssues.length ? s.topIssues.map((t) => `${t.title} x${t.count}`).join('; ') : 'None',
+    s.unresolvedRed.length ? s.unresolvedRed.slice(0, 3).map((r) => `${fmtTime(r.timestamp)} ${r.title} – ${r.machineName}`).join('; ') : 'None',
+  ];
+}
+
+const VERDICT = {
+  GREEN: 'All OK today. No action needed.',
+  AMBER: 'Mostly OK. Some warnings were handled or need a look.',
+  RED: 'Needs your attention: red alerts are still open.',
+};
+
 export function formatSummaryMessage(s) {
-  const verdict = {
-    GREEN: 'All OK today. No action needed.',
-    AMBER: 'Mostly OK. Some warnings were handled or need a look.',
-    RED: 'Needs your attention: red alerts are still open.',
-  }[s.light];
+  const verdict = VERDICT[s.light];
   const lines = [
     `${LIGHT_EMOJI[s.light]} Shopfloor Sentinel – daily summary ${s.date}`,
     verdict,

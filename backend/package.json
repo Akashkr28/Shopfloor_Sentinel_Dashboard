@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shopfloor Sentinel – Node.js API, alert logic and owner notifications",
+  "description": "Shopfloor Sentinel \u2013 Node.js API, alert logic and owner notifications",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --watch src/server.js",
-    "seed": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/seed.js --reset"
+    "seed": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/seed.js --reset",
+    "test": "node --disable-warning=ExperimentalWarning --test 'test/*.test.js'"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
