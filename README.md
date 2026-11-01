@@ -100,7 +100,8 @@ This builds the dashboard, starts a real server on a temporary database, and dri
 
 | Suite | What it covers |
 |---|---|
-| `backend/test/api.test.js` (33 tests with the migration test) | HttpOnly cookie and CSRF, login rate limits, sign-out on password change, disabled users, role-based access, owner-account protection, gateway auth and validation, severity rules, red-alert dedup, drills never messaging owners, escalation levels, gateway-offline and back-online messages, retry with backoff, WhatsApp templates, Twilio and WhatsApp webhook signatures, read receipts never going backwards, CSV formula injection, audit log, security headers |
+| `backend/test/ai.test.js` (14 tests) | Indexing of the playbooks and real CISA advisories; semantic search ranking; incremental re-index; CSAF parsing and the CVE cap; the triage agent run through the real SDK tool runner against a fake Claude API (request shape: model, effort, fallbacks, cached system prompt, strict submit tool, no forced tool choice, server-side threads); invented citations dropped; owner WhatsApp sent once; the nudge when the model forgets to submit; refusals and API errors recorded; drills, amber alerts and repeats not auto-triaged; role access; the MCP server over stdio (all tools, triage through MCP, errors) |
+| `backend/test/api.test.js` (32 tests) | HttpOnly cookie and CSRF, login rate limits, sign-out on password change, disabled users, role-based access, owner-account protection, gateway auth and validation, severity rules, red-alert dedup, drills never messaging owners, escalation levels, gateway-offline and back-online messages, retry with backoff, WhatsApp templates, Twilio and WhatsApp webhook signatures, read receipts never going backwards, CSV formula injection, audit log, security headers |
 | `backend/test/migrate.test.js` | A prototype database upgrades in place without losing data |
 | `gateway/tests/` (26 tests) | Packet parsing (Ethernet, ARP, TCP, Modbus), pcap round-trip, device learning and baseline persistence, remote-access and burst detection, trusted engineering stations, Modbus writes, port scans, PLC-to-internet traffic, large uploads, Linux auth and USB logs, Windows 4624 / 4625 / 7045 / 1102 / 1116 / 6416 in NXLog JSON and key=value formats |
 | `e2e/browser.test.js` (6 flows) | A red alert reaches the operator's phone screen in under 5 s; the Hindi 3-step script is ticked through to resolved; the session cookie is invisible to JavaScript; an engineer edits Marathi wording; a drill is labelled and scored; the owner's WhatsApp preview is sent and shows delivery ticks; a password change; the gateway-offline banner; all Setup tabs |
@@ -120,6 +121,108 @@ This builds the dashboard, starts a real server on a temporary database, and dri
 | | New service (7045 / 4697), audit log cleared (1102 / 104), Defender detection (1116 / 1117) | `SUSPICIOUS_SOFTWARE` | **red** |
 
 Each finding is reported at most once per cooldown (default 10 min), so a brute-force run becomes one event, not hundreds. When the backend is unreachable, events are saved to `buffer.jsonl` (capped) and sent once it is back. Every monitor sends a heartbeat each minute.
+
+## AI layer: triage agent, playbook search and MCP
+
+Three pieces sit on top of the dashboard. None of them changes alerts or machines on its own.
+
+**1. Red-alert triage agent** (`backend/src/ai/triage.js`). When a red alert arrives (not drills, and not repeats of the same alert on the same machine), Claude Opus 5.5 investigates it with read-only tools:
+
+| Tool | What it returns |
+|---|---|
+| `get_alert` | The alert, its gateway details (IPs, protocol, counts) and the steps operators have ticked |
+| `find_related_events` | Events on the same machine, involving the same IP anywhere, or of the same type on other machines |
+| `get_machine_history` | That machine's normal alert pattern, open alerts and drill results |
+| `get_gateway_status` | Whether monitoring has blind spots |
+| `search_knowledge_base` | Playbook and advisory passages, with ids to cite |
+
+It then calls a strict `submit_triage` tool with:
+- a headline
+- a **plain-language owner summary** (110 words at most)
+- the technical sequence of events and likely cause
+- confidence, and whether it is likely benign
+- related alert ids
+- 3–6 **next steps** (who, what, how urgent), each citing knowledge-base passages
+
+Before anything is saved, Sentinel **keeps only citations the agent actually retrieved**. Anything else is dropped and counted. The result appears:
+- in the alert drawer (for supervisors, engineers and owners), with numbered citations you can expand to the source passage and a trail of how the agent got there
+- under each red alert on the owner page
+- in one **WhatsApp/SMS to the owner** per alert
+
+Engineers can re-run a triage from the drawer.
+
+Model settings:
+- **Model and effort:** `claude-opus-5-5` at effort `high`, through the Anthropic SDK tool runner. The system prompt is cached.
+- **Refusal fallback:** server-side fallback on (`fallbacks: "default"`), so a declined request is retried on another model. A request that is still declined is recorded as failed with its category.
+- **Timestamps:** the agent sees UTC times plus factory-local times, and is told to write local times for people.
+- **Untrusted data:** tool results (log lines, hostnames) are marked as untrusted data, never instructions.
+- **Visible cost:** each run's token use is shown in the drawer.
+
+To turn it on, add `ANTHROPIC_API_KEY=...` to `backend/.env` and restart. Every setting is in `backend/.env.example` under "AI layer".
+
+**2. Playbook and advisory knowledge base (RAG)** (`backend/src/ai/knowledge.js`).
+
+- **Playbooks:** `docs/playbooks/` holds 7 incident playbooks (one per alert type) and an OT incident-response guide covering safety first, evidence, isolation without stopping production, and CERT-In 6-hour reporting.
+- **Advisories:** `docs/advisories/` holds real **CISA ICS advisories** in CSAF format, fetched from CISA's official repository for the vendors you name. Each advisory keeps its 15 most severe CVEs in detail, with the rest summarised, so one advisory with 600 CVEs can't flood every search.
+- **Indexing:** documents are split by heading into ~900-character passages and embedded **locally** with all-MiniLM-L6-v2. That works offline on a Pi after a one-time 23 MB download. `EMBEDDINGS=hash` needs no model at all.
+- **Storage:** vectors are stored in SQLite by default, or in **Chroma** with `VECTOR_STORE=chroma` and `CHROMA_URL`.
+
+Fetch the CISA advisories for your vendors:
+
+```bash
+npm --prefix backend run kb:fetch-cisa -- --match "Siemens|Schneider|Rockwell|Mitsubishi" --limit 40
+```
+
+Re-index after adding or editing documents. Unchanged files are skipped, and the server also re-indexes on start.
+
+```bash
+npm --prefix backend run kb:index
+```
+
+See what the agent would retrieve for a question:
+
+```bash
+npm --prefix backend run kb:search -- "someone plugged a pen drive into the press HMI"
+```
+
+To use Chroma, run a Chroma server and set `VECTOR_STORE=chroma` and `CHROMA_URL=http://localhost:8000` in `backend/.env`:
+
+```bash
+docker run -p 8000:8000 chromadb/chroma
+```
+
+**Setup → AI & playbooks** shows the status, the indexed documents, a test search and a re-index button.
+
+**3. MCP server** (`backend/src/mcp/server.js`). This lets Claude Code, Claude Desktop or any MCP client work with Sentinel.
+
+| Tool | Read-only |
+|---|---|
+| `list_alerts`, `get_alert`, `list_machines`, `list_drills`, `list_alert_types`, `search_playbooks`, `get_triage`, `daily_summary` | ✓ |
+| `add_alert_note`, `start_drill`, `triage_alert` | |
+
+The server signs in to the REST API as a normal Sentinel user, so **that account's role limits what the tools can do**, and every write appears in the audit log. Create a dedicated account for it, for example an ENGINEER called `assistant`.
+
+Add it to Claude Code:
+
+```bash
+claude mcp add sentinel --env SENTINEL_URL=http://localhost:4000 --env SENTINEL_USERNAME=assistant --env SENTINEL_PASSWORD=change-me -- node /opt/shopfloor-sentinel/backend/src/mcp/server.js
+```
+
+For Claude Desktop, add this to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sentinel": {
+      "command": "node",
+      "args": ["/opt/shopfloor-sentinel/backend/src/mcp/server.js"],
+      "env": { "SENTINEL_URL": "http://localhost:4000", "SENTINEL_USERNAME": "assistant", "SENTINEL_PASSWORD": "change-me" }
+    }
+  }
+}
+```
+
+Then you can ask things like "What red alerts are open on Press Line 1 and what do our playbooks say to do?" or "Triage alert 42 and draft a note for the owner."
 
 ## Owner messaging
 
@@ -192,6 +295,9 @@ backend/        Node.js + Express API
   src/security.js   rate limits, CSRF guard, validation, audit log
   src/routes/       api.js (REST) · webhooks.js (Twilio / WhatsApp receipts)
   src/services/     alerts · notify (queue, providers, templates) · watchdog (escalation, gateways) · summary · live (SSE)
+  src/ai/           triage agent · knowledge base (chunking, CSAF) · embeddings · vector stores (SQLite / Chroma) · agent context tools
+  src/mcp/server.js MCP server (stdio) over the REST API
+  scripts/          kb.js (index / search) · fetch-cisa-advisories.js
   test/             API + migration tests (node:test)
 frontend/       React 18 + Vite – operator, engineer, owner, templates, drills, setup
 gateway/        Python, standard library only
@@ -204,7 +310,7 @@ gateway/        Python, standard library only
   systemd/            service units for the Pi
   tests/              detector tests (unittest)
 e2e/            Chrome end-to-end tests (puppeteer-core)
-docs/           DEPLOYMENT.md
+docs/           DEPLOYMENT.md · playbooks/ (incident playbooks) · advisories/ (CISA ICS advisories, CSAF)
 ```
 
 ## Known limits

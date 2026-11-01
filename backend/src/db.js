@@ -162,6 +162,74 @@ export const MIGRATIONS = [
     offlineNotifiedAt TEXT
   );
   `,
+  // 3 – AI layer: triage results, playbook knowledge base, AI owner summaries
+  `
+  CREATE TABLE ai_triage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alertEventId INTEGER NOT NULL REFERENCES alert_events(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('PENDING','RUNNING','DONE','FAILED')),
+    trigger TEXT NOT NULL CHECK (trigger IN ('AUTO','MANUAL','MCP')),
+    requestedByUserId INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    model TEXT,
+    result TEXT,
+    sources TEXT,
+    trace TEXT,
+    usage TEXT,
+    error TEXT,
+    createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    startedAt TEXT,
+    finishedAt TEXT
+  );
+  CREATE INDEX idx_triage_alert ON ai_triage(alertEventId, id);
+
+  CREATE TABLE kb_documents (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('PLAYBOOK','ADVISORY','GUIDE')),
+    source TEXT NOT NULL,
+    url TEXT,
+    hash TEXT NOT NULL,
+    meta TEXT,
+    chunkCount INTEGER NOT NULL DEFAULT 0,
+    indexedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  CREATE TABLE kb_chunks (
+    id TEXT PRIMARY KEY,
+    documentId TEXT NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    heading TEXT,
+    text TEXT NOT NULL,
+    embedding BLOB
+  );
+  CREATE INDEX idx_kb_chunks_doc ON kb_chunks(documentId, seq);
+
+  CREATE TABLE notification_logs_v3 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alertEventId INTEGER REFERENCES alert_events(id) ON DELETE SET NULL,
+    userId INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    type TEXT NOT NULL CHECK (type IN ('DAILY_SUMMARY','RED_ALERT','ESCALATION','RESOLVED_UPDATE','GATEWAY_OFFLINE','TEST','AI_SUMMARY')),
+    channel TEXT NOT NULL CHECK (channel IN ('WHATSAPP','SMS')),
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('PENDING','SENT','FAILED')),
+    message TEXT NOT NULL,
+    templateParams TEXT,
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    nextAttemptAt TEXT,
+    providerMessageId TEXT,
+    deliveryStatus TEXT,
+    deliveryUpdatedAt TEXT,
+    escalationLevel INTEGER,
+    gatewayId TEXT,
+    timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  INSERT INTO notification_logs_v3 SELECT * FROM notification_logs;
+  DROP TABLE notification_logs;
+  ALTER TABLE notification_logs_v3 RENAME TO notification_logs;
+  CREATE INDEX idx_notify_queue ON notification_logs(status, nextAttemptAt);
+  CREATE INDEX idx_notify_alert ON notification_logs(alertEventId, type);
+  CREATE INDEX idx_notify_provider_id ON notification_logs(providerMessageId);
+  `,
 ];
 
 function migrate() {

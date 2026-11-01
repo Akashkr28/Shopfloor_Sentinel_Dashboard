@@ -58,7 +58,15 @@ export function buildDailySummary(when = new Date()) {
     .slice(0, 3)
     .map((k) => ({ ...k, machines: [...k.machines] }));
 
+  const aiFor = db.prepare("SELECT result FROM ai_triage WHERE alertEventId = ? AND status = 'DONE' ORDER BY id DESC LIMIT 1");
+  const ai = (id) => {
+    const row = aiFor.get(id);
+    if (!row) return null;
+    const r = JSON.parse(row.result);
+    return { headline: r.headline, ownerSummary: r.ownerSummary, confidence: r.confidence };
+  };
   const reds = rows.filter((r) => r.severity === 'RED').map((r) => ({
+    ai: ai(r.id),
     id: r.id, title: r.title, machineName: r.machineName, timestamp: r.timestamp, status: r.status,
     operatorActed: r.actionCount > 0, ownerFollowUp: r.ownerFollowUp,
   }));

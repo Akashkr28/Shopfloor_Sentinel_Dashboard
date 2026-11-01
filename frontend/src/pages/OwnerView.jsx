@@ -50,7 +50,7 @@ function WhatsAppPreview({ text, onClose, onSend }) {
 
 const TYPE_LABEL = {
   RED_ALERT: 'Red alert', DAILY_SUMMARY: 'Daily summary', ESCALATION: 'Escalation', RESOLVED_UPDATE: 'Handled update',
-  GATEWAY_OFFLINE: 'Gateway status', TEST: 'Test',
+  GATEWAY_OFFLINE: 'Gateway status', TEST: 'Test', AI_SUMMARY: 'AI summary',
 };
 
 /** WhatsApp-style ticks: ✓ sent, ✓✓ delivered, blue ✓✓ read. */
@@ -75,7 +75,7 @@ export default function OwnerView() {
   const summary = useFetch('/owner/daily-summary');
   const notifications = useFetch('/notifications');
   const [preview, setPreview] = useState(false);
-  useLiveRefresh(['alert', 'alert-updated', 'notification'], () => {
+  useLiveRefresh(['alert', 'alert-updated', 'notification', 'triage'], () => {
     summary.reload();
     notifications.reload();
   });
@@ -148,6 +148,12 @@ export default function OwnerView() {
                     <span className={`pill ${r.status === 'RESOLVED' ? 'sev-GREEN' : 'sev-RED'}`}>{r.status.toLowerCase()}</span>
                     <span className="muted small">operator acted: {r.operatorActed ? 'yes' : 'not yet'}</span>
                   </div>
+                  {r.ai && (
+                    <div className="ai-inline">
+                      <Icon name="spark" size={15} />
+                      <span><b>{r.ai.headline}</b> {r.ai.ownerSummary}</span>
+                    </div>
+                  )}
                   {r.status !== 'RESOLVED' && r.ownerFollowUp && <p className="small follow">→ {r.ownerFollowUp}</p>}
                 </li>
               ))}

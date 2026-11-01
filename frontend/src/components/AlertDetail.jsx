@@ -4,6 +4,7 @@ import { fmtDateTime, LANGS, pickLoc, t, timeAgo } from '../i18n.js';
 import { useSession } from '../session.jsx';
 import AudioButton from './AudioButton.jsx';
 import Icon from './Icon.jsx';
+import TriagePanel from './TriagePanel.jsx';
 
 const STEPS = [
   { n: 1, key: 'whatYouSee', field: 'whatYouSee', icon: 'eye' },
@@ -12,8 +13,9 @@ const STEPS = [
 ];
 
 /** Drawer with the 3-step script, language switcher, audio and "I did this" ticks. */
-export default function AlertDetail({ alertId, onClose, onChanged }) {
+export default function AlertDetail({ alertId: initialId, onClose, onChanged }) {
   const { user } = useSession();
+  const [alertId, setAlertId] = useState(initialId); // related alerts open in place
   const [alert, setAlert] = useState(null);
   const [lang, setLang] = useState(user.preferredLanguage);
   const [busy, setBusy] = useState(false);
@@ -133,6 +135,8 @@ export default function AlertDetail({ alertId, onClose, onChanged }) {
               </button>
             )}
           </div>
+
+          {user.role !== 'OPERATOR' && <TriagePanel key={alert.id} alert={alert} onOpenAlert={setAlertId} />}
 
           {canResolve ? (
             <form

@@ -4,11 +4,20 @@ import { assertSafeConfig, config } from './config.js';
 import { seed } from './seed.js';
 import { processQueue, sendDailySummary } from './services/notify.js';
 import { runWatchdog } from './services/watchdog.js';
+import { syncKnowledgeBase } from './ai/knowledge.js';
+import { aiStatus } from './ai/triage.js'; // also subscribes auto-triage to new red alerts
 
 assertSafeConfig();
 seed();
 
 const app = createApp();
+
+// AI layer: keep the playbook index in step with docs/.
+syncKnowledgeBase()
+  .then((r) => console.log(`[kb] knowledge base ready (+${r.added} ~${r.updated} -${r.removed}${r.failed.length ? `, ${r.failed.length} failed` : ''})`))
+  .catch((e) => console.error('[kb] indexing failed', e));
+const ai = aiStatus();
+console.log(ai.enabled ? `[ai] triage on (${ai.model}, effort ${ai.effort}, auto ${ai.autoTriage ? 'on' : 'off'})` : '[ai] triage off – set ANTHROPIC_API_KEY to enable');
 
 cron.schedule(config.dailySummaryCron, () => {
   sendDailySummary().catch((e) => console.error('[cron] daily summary failed', e));

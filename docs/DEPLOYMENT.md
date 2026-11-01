@@ -181,6 +181,24 @@ Without templates, Sentinel sends free text. WhatsApp only delivers free text if
 
 Use **Setup → Notifications → Send test** to check the setup. Every message, retry and delivery receipt appears on the owner page.
 
+## 8b. AI triage and the knowledge base (optional)
+
+1. Add `ANTHROPIC_API_KEY` to `backend/.env`. Triage runs on Anthropic's API, so the Pi needs outbound HTTPS to `api.anthropic.com`. Alert data sent for triage includes machine names, IPs and log details. Check that this is acceptable for your factory first, or set `AI_TRIAGE_AUTO=false` and triage only on demand.
+2. Fetch the advisories for your equipment vendors and index them:
+   ```bash
+   sudo -u sentinel npm --prefix backend run kb:fetch-cisa -- --match "Siemens|Schneider|Rockwell|Mitsubishi|Delta" --limit 60
+   ```
+   ```bash
+   sudo -u sentinel npm --prefix backend run kb:index
+   ```
+3. Add your own procedures as Markdown files in `docs/playbooks/`, with the engineer's real phone numbers and your machine names. The agent cites them.
+4. **Pi footprint.** The local embedding runtime is an optional dependency, and the biggest part of `node_modules`. On a small SD card, install without it and use keyword-style search instead:
+   ```bash
+   npm --prefix backend ci --omit=optional
+   ```
+   Then set `EMBEDDINGS=hash`. To use Chroma, run it on another machine (`docker run -p 8000:8000 chromadb/chroma`) and set `VECTOR_STORE=chroma` and `CHROMA_URL`.
+5. For the MCP server, create a dedicated Sentinel account (ENGINEER, or SUPERVISOR for read-mostly use) and see the README's "MCP server" section.
+
 ## 9. Backups
 
 The whole state is one SQLite file plus the uploaded audio. Back them up nightly with a crontab line for the `sentinel` user:
