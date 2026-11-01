@@ -6,12 +6,22 @@ const SessionCtx = createContext(null);
 export function SessionProvider({ children }) {
   // undefined = still checking the cookie, null = logged out
   const [user, setUser] = useState(undefined);
+  // { factoryName, needsSetup, demo } – what the public pages need before sign-in
+  const [meta, setMeta] = useState(null);
 
+  const reloadMeta = useCallback(() => api('/meta').then(setMeta).catch(() => setMeta({ factoryName: null, needsSetup: false, demo: false })), []);
   useEffect(() => {
+    reloadMeta();
     api('/auth/session')
       .then((s) => setUser(s.user))
       .catch(() => setUser(null));
-  }, []);
+  }, [reloadMeta]);
+
+  /** After first-run setup or accepting an invite the server has already set the session cookie. */
+  const adopt = useCallback((u) => {
+    setUser(u);
+    reloadMeta();
+  }, [reloadMeta]);
 
   const login = useCallback(async (username, password) => {
     const s = await api('/auth/login', { method: 'POST', body: { username, password } });
@@ -35,7 +45,11 @@ export function SessionProvider({ children }) {
     return () => window.removeEventListener('sentinel:logout', onLogout);
   }, []);
 
-  return <SessionCtx.Provider value={{ user, ready: user !== undefined, login, logout, setLanguage }}>{children}</SessionCtx.Provider>;
+  return (
+    <SessionCtx.Provider value={{ user, meta, ready: user !== undefined && meta !== null, login, logout, setLanguage, adopt, reloadMeta }}>
+      {children}
+    </SessionCtx.Provider>
+  );
 }
 
 export const useSession = () => useContext(SessionCtx);

@@ -64,7 +64,7 @@ function SimulatePanel({ machines, templates, onDone }) {
 }
 
 export default function EngineerView() {
-  const { user } = useSession();
+  const { user, meta } = useSession();
   const [f, setF] = useState({ severity: '', machineId: '', status: '', isDrill: 'false', since: '' });
   const [openId, setOpenId] = useState(null);
   const sinceIso = f.since ? new Date(f.since).toISOString() : undefined;
@@ -132,7 +132,7 @@ export default function EngineerView() {
             <p className="muted">No warnings in the last 24 hours.</p>
           )}
         </div>
-        <SimulatePanel machines={machines.data} templates={templates.data} onDone={alerts.reload} />
+        {meta?.simulate && <SimulatePanel machines={machines.data} templates={templates.data} onDone={alerts.reload} />}
       </div>
 
       <div className="panel">

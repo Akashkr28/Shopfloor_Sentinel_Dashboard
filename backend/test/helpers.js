@@ -8,14 +8,17 @@ process.env.DB_PATH = path.join(dir, 'test.db');
 process.env.UPLOADS_DIR = path.join(dir, 'uploads');
 process.env.FRONTEND_DIST = path.join(dir, 'no-frontend');
 process.env.NOTIFY_PROVIDER = 'mock';
-process.env.SEED_DEMO = 'true';
+process.env.SEED_DEMO ??= 'true';
 process.env.GATEWAY_TOKEN = 'test-gateway-token-0123456789';
 process.env.JWT_SECRET = 'test-jwt-secret-0123456789-0123456789';
 process.env.TWILIO_AUTH_TOKEN = 'twilio-test-auth-token';
 process.env.PUBLIC_URL = 'https://sentinel.example.test';
 process.env.WHATSAPP_APP_SECRET = 'wa-test-app-secret';
 process.env.WHATSAPP_VERIFY_TOKEN = 'wa-verify';
-// AI layer: off unless a test file turns it on; lexical embeddings so tests need no model download.
+// AI layer: off unless a test file turns it on (ai.test.js points it at a local fake API).
+// Never inherit Anthropic credentials or endpoints from the developer's shell.
+for (const k of Object.keys(process.env)) if (k.startsWith('ANTHROPIC_') && !process.env.SENTINEL_TEST_KEEP_ANTHROPIC?.includes(k)) delete process.env[k];
+// Lexical embeddings so tests need no model download.
 process.env.EMBEDDINGS ??= 'hash';
 process.env.AI_TRIAGE_AUTO ??= 'false';
 process.env.KB_DIRS ??= [path.resolve(import.meta.dirname, '..', '..', 'docs', 'playbooks'), path.resolve(import.meta.dirname, '..', '..', 'docs', 'advisories')].join(',');

@@ -22,6 +22,10 @@ export const config = {
   trustProxy: env.TRUST_PROXY || false, // e.g. "loopback" or "1" behind nginx/Caddy
   corsOrigin: env.CORS_ORIGIN || '', // only needed if the UI is served from another origin
   seedDemoData: bool(env.SEED_DEMO, !isProduction),
+  // One-time code needed to create the first Owner; generated and logged at start if not set.
+  setupCode: env.SETUP_CODE || '',
+  // The dashboard's "Simulate event" button creates fake alerts (and owner messages). Demo-only unless enabled.
+  allowSimulate: bool(env.ALLOW_SIMULATE, bool(env.SEED_DEMO, !isProduction)),
 
   jwtSecret: env.JWT_SECRET || DEV_JWT,
   jwtExpiresIn: env.JWT_EXPIRES_IN || '12h',
@@ -81,8 +85,10 @@ export const config = {
 
   // ---------- AI layer (Claude) ----------
   ai: {
-    // The Anthropic SDK reads ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL) itself.
-    enabled: bool(env.AI_ENABLED, !!(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN)),
+    // On only with an explicit ANTHROPIC_API_KEY (or AI_ENABLED=true for other credential sources).
+    // Deliberately not ANTHROPIC_AUTH_TOKEN alone: that is often inherited from a developer's shell
+    // (e.g. a coding assistant) and must not silently send alert data anywhere.
+    enabled: bool(env.AI_ENABLED, !!env.ANTHROPIC_API_KEY),
     model: env.AI_MODEL || 'claude-opus-5-5',
     effort: env.AI_EFFORT || 'high', // low | medium | high | xhigh | max
     fallbacks: bool(env.AI_FALLBACKS, true), // server-side refusal fallback

@@ -239,6 +239,8 @@ function UsersPanel() {
           </tbody>
         </table>
       </div>
+      <details className="raw" style={{ marginTop: '1rem' }}>
+        <summary>Create an account directly (e.g. a shared shopfloor-screen login)</summary>
       <form className="form-row" onSubmit={add}>
         <input placeholder="Full name" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} required />
         <input placeholder="username" value={nu.username} onChange={(e) => setNu({ ...nu, username: e.target.value.toLowerCase() })} required autoCapitalize="none" />
@@ -252,9 +254,157 @@ function UsersPanel() {
         <input placeholder="+91… (owners, engineers)" value={nu.phoneNumber} onChange={(e) => setNu({ ...nu, phoneNumber: e.target.value })} />
         <button className="btn btn-primary">Add user</button>
       </form>
+      </details>
       {error && <p className="error">{error}</p>}
       {resetFor && <ResetPassword target={resetFor} onClose={() => setResetFor(null)} />}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- invites
+const ROLE_HELP = {
+  OPERATOR: 'Shopfloor alert screen only',
+  SUPERVISOR: 'Alerts + drills + notes',
+  ENGINEER: 'Everything except owner accounts',
+  OWNER: 'Full control, WhatsApp summaries',
+};
+
+function shareText(factory, inv) {
+  return `You're invited to Shopfloor Sentinel${factory ? ` for ${factory}` : ''} as ${inv.role.toLowerCase()}. Open this link to create your account (works once): ${inv.url}`;
+}
+
+function InvitesPanel() {
+  const { user, meta } = useSession();
+  const invites = useFetch('/invites');
+  const [f, setF] = useState({ role: 'OPERATOR', name: '', phoneNumber: '', preferredLanguage: 'hi', expiresInDays: 7 });
+  const [created, setCreated] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
+
+  const create = async (e) => {
+    e.preventDefault();
+    setError('');
+    setCopied(false);
+    try {
+      const inv = await api('/invites', { method: 'POST', body: { ...f, name: f.name || null, phoneNumber: f.phoneNumber || null } });
+      setCreated(inv);
+      setF({ ...f, name: '', phoneNumber: '' });
+      invites.reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(created.url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+  const revoke = async (id) => {
+    try {
+      await api(`/invites/${id}`, { method: 'DELETE' });
+    } finally {
+      invites.reload();
+    }
+  };
+  const waLink = (inv) => `https://wa.me/${(inv.phoneNumber || '').replace(/\D/g, '')}?text=${encodeURIComponent(shareText(meta?.factoryName, inv))}`;
+  const pending = (invites.data || []).filter((i) => i.status === 'PENDING');
+  const recent = (invites.data || []).filter((i) => i.status !== 'PENDING').slice(0, 8);
+
+  return (
+    <div className="panel">
+      <h3><Icon name="send" size={18} /> Invite people</h3>
+      <p className="muted small">The link carries the role – people choose only their own name, username and password. Each link works once and expires.</p>
+      <form className="form-row" onSubmit={create}>
+        <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} aria-label="Role">
+          {ROLES.filter((r) => r !== 'OWNER' || user.role === 'OWNER').map((r) => <option key={r} value={r}>{r.toLowerCase()} – {ROLE_HELP[r]}</option>)}
+        </select>
+        <input placeholder="Name (optional)" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} maxLength={80} />
+        <input placeholder="+91… WhatsApp (optional)" value={f.phoneNumber} onChange={(e) => setF({ ...f, phoneNumber: e.target.value })} />
+        <select value={f.preferredLanguage} onChange={(e) => setF({ ...f, preferredLanguage: e.target.value })} aria-label="Language">
+          {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+        </select>
+        <select value={f.expiresInDays} onChange={(e) => setF({ ...f, expiresInDays: Number(e.target.value) })} aria-label="Expires">
+          {[1, 3, 7, 14, 30].map((d) => <option key={d} value={d}>expires in {d} day{d > 1 ? 's' : ''}</option>)}
+        </select>
+        <button className="btn btn-primary">Create invite link</button>
+      </form>
+      {error && <p className="error small">{error}</p>}
+
+      {created && (
+        <div className="invite-created" role="status">
+          <div className="small">
+            Invite for <b>{created.name || 'a new'} {created.role.toLowerCase()}</b> – copy it now, it won't be shown again.
+          </div>
+          <div className="invite-link">
+            <input readOnly value={created.url} onFocus={(e) => e.target.select()} className="mono" aria-label="Invite link" />
+            <button type="button" className="btn" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button>
+            <a className="btn btn-primary" href={waLink(created)} target="_blank" rel="noreferrer noopener">Share on WhatsApp</a>
+          </div>
+        </div>
+      )}
+
+      {pending.length > 0 && (
+        <div className="table-wrap" style={{ marginTop: '1rem' }}>
+          <table className="timeline">
+            <thead>
+              <tr><th>Pending invite</th><th>Role</th><th>Created by</th><th>Expires</th><th /></tr>
+            </thead>
+            <tbody>
+              {pending.map((i) => (
+                <tr key={i.id} className="no-click">
+                  <td>{i.name || <span className="muted">unnamed</span>} {i.phoneNumber && <span className="mono small muted">{i.phoneNumber}</span>}</td>
+                  <td><span className="pill status">{i.role.toLowerCase()}</span></td>
+                  <td>{i.createdByName || '–'}</td>
+                  <td className="mono small">{fmtDateTime(i.expiresAt)}</td>
+                  <td>{(user.role === 'OWNER' || i.role !== 'OWNER') && <button className="btn btn-ghost" onClick={() => revoke(i.id)}>Revoke</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {recent.length > 0 && (
+        <details className="raw" style={{ marginTop: '0.75rem' }}>
+          <summary>Used and expired invites</summary>
+          <ul className="small">
+            {recent.map((i) => (
+              <li key={i.id}>
+                {i.role.toLowerCase()} · {i.name || 'unnamed'} · <b>{i.status.toLowerCase()}</b>{i.usedByUsername ? ` by ${i.usedByUsername}` : ''} · {fmtDateTime(i.usedAt || i.revokedAt || i.expiresAt)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function FactoryPanel() {
+  const { meta, reloadMeta } = useSession();
+  const [name, setName] = useState(meta?.factoryName || '');
+  const [msg, setMsg] = useState('');
+  const save = async (e) => {
+    e.preventDefault();
+    try {
+      await api('/settings', { method: 'PATCH', body: { factoryName: name } });
+      setMsg('Saved');
+      reloadMeta();
+    } catch (err) {
+      setMsg(err.message);
+    }
+  };
+  return (
+    <form className="panel" onSubmit={save}>
+      <h3>Factory</h3>
+      <div className="form-row">
+        <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} aria-label="Factory name" />
+        <button className="btn">Rename</button>
+      </div>
+      {msg && <p className="small">{msg}</p>}
+    </form>
   );
 }
 
@@ -562,6 +712,7 @@ function AiPanel() {
 }
 
 export default function Setup() {
+  const { user } = useSession();
   const [params, setParams] = useSearchParams();
   const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'machines';
   return (
@@ -580,7 +731,13 @@ export default function Setup() {
         ))}
       </div>
       {tab === 'machines' && <MachinesPanel />}
-      {tab === 'users' && <UsersPanel />}
+      {tab === 'users' && (
+        <>
+          <InvitesPanel />
+          <UsersPanel />
+          {user.role === 'OWNER' && <FactoryPanel />}
+        </>
+      )}
       {tab === 'gateways' && <GatewaysPanel />}
       {tab === 'notifications' && <NotificationsPanel />}
       {tab === 'audit' && <AuditPanel />}

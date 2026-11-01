@@ -1,0 +1,11 @@
+.git
+.claude
+**/node_modules
+**/.env
+**/.DS_Store
+backend/data
+backend/uploads
+frontend/dist
+e2e
+gateway
+submission

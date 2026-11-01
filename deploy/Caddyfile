@@ -1,0 +1,9 @@
+# HTTPS certificates are obtained and renewed automatically for {$DOMAIN}.
+{$DOMAIN} {
+	encode zstd gzip
+	header -Server
+	reverse_proxy sentinel:4000 {
+		# Live updates are a Server-Sent Events stream – pass every event through immediately.
+		flush_interval -1
+	}
+}

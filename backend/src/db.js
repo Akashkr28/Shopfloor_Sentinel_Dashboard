@@ -230,6 +230,28 @@ export const MIGRATIONS = [
   CREATE INDEX idx_notify_alert ON notification_logs(alertEventId, type);
   CREATE INDEX idx_notify_provider_id ON notification_logs(providerMessageId);
   `,
+  // 4 – production accounts: factory settings and role-carrying invite links
+  `
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  CREATE TABLE invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tokenHash TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('OWNER','ENGINEER','SUPERVISOR','OPERATOR')),
+    name TEXT,
+    phoneNumber TEXT,
+    preferredLanguage TEXT NOT NULL DEFAULT 'en' CHECK (preferredLanguage IN ('en','hi','mr','ta')),
+    createdByUserId INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    expiresAt TEXT NOT NULL,
+    usedAt TEXT,
+    usedByUserId INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    revokedAt TEXT
+  );
+  `,
 ];
 
 function migrate() {

@@ -7,6 +7,7 @@ import * as fake from './fake-claude.js';
 // Point the real Anthropic SDK at the fake API before anything imports it.
 process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
 process.env.ANTHROPIC_BASE_URL = fake.url;
+process.env.SENTINEL_TEST_KEEP_ANTHROPIC = 'ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL'; // helpers strips every other ANTHROPIC_* variable
 process.env.AI_TRIAGE_AUTO = 'true';
 
 const h = await import('./helpers.js');
