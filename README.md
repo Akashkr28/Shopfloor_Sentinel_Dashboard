@@ -84,6 +84,21 @@ The Vite dev server runs on http://localhost:5173 and proxies `/api` to port 400
 npm run seed:reset
 ```
 
+## Accounts and roles in a real installation
+
+- **Demo mode:** `SEED_DEMO=true`, the default outside production. It creates the five demo accounts and shows them on the login page.
+- **Real installation:** `NODE_ENV=production` (or `SEED_DEMO=false`) starts with **no accounts at all**.
+  1. **First run:** the dashboard opens **Set up your factory**. Whoever sets it up must enter the one-time **setup code** printed in the server log (or set as `SETUP_CODE`). That stops a stranger who finds a public server first from making themselves Owner.
+  2. **Everyone else joins by invite link** (**Setup → Users → Invite people**). The link carries the role, and the person chooses only their name, username and password. Owners can invite any role; engineers can invite anyone except owners.
+  3. **Link security:** links are single-use and expire after 1–30 days. They can be revoked, and only a hash of each is stored. Creating, using and revoking links are all audit-logged.
+  4. **Factory name:** the Owner sets it during setup and can rename it under Setup → Users.
+- **"Simulate event" button:** demo-only unless you set `ALLOW_SIMULATE=true`.
+
+To deploy to a cloud server, follow **[docs/DEPLOYMENT.md → Cloud VPS with Docker](docs/DEPLOYMENT.md#cloud-vps-with-docker)**:
+1. Point a domain at the server.
+2. Run `sudo ./deploy/install.sh your.domain`.
+3. Open the site and enter the setup code.
+
 ## Tests
 
 ```bash
@@ -102,8 +117,10 @@ This builds the dashboard, starts a real server on a temporary database, and dri
 |---|---|
 | `backend/test/ai.test.js` (14 tests) | Indexing of the playbooks and real CISA advisories; semantic search ranking; incremental re-index; CSAF parsing and the CVE cap; the triage agent run through the real SDK tool runner against a fake Claude API (request shape: model, effort, fallbacks, cached system prompt, strict submit tool, no forced tool choice, server-side threads); invented citations dropped; owner WhatsApp sent once; the nudge when the model forgets to submit; refusals and API errors recorded; drills, amber alerts and repeats not auto-triaged; role access; the MCP server over stdio (all tools, triage through MCP, errors) |
 | `backend/test/api.test.js` (32 tests) | HttpOnly cookie and CSRF, login rate limits, sign-out on password change, disabled users, role-based access, owner-account protection, gateway auth and validation, severity rules, red-alert dedup, drills never messaging owners, escalation levels, gateway-offline and back-online messages, retry with backoff, WhatsApp templates, Twilio and WhatsApp webhook signatures, read receipts never going backwards, CSV formula injection, audit log, security headers |
+| `backend/test/accounts.test.js` (16 tests) | Fresh install has no accounts; wrong or missing setup code refused; setup creates the Owner once and only once; invite role can't be overridden; links single-use, expiring, revocable, stored hashed; engineers can't invite owners; taken usernames don't burn the link; audit entries; owner-only factory rename; simulate off in production; rate limits |
 | `backend/test/migrate.test.js` | A prototype database upgrades in place without losing data |
 | `gateway/tests/` (26 tests) | Packet parsing (Ethernet, ARP, TCP, Modbus), pcap round-trip, device learning and baseline persistence, remote-access and burst detection, trusted engineering stations, Modbus writes, port scans, PLC-to-internet traffic, large uploads, Linux auth and USB logs, Windows 4624 / 4625 / 7045 / 1102 / 1116 / 6416 in NXLog JSON and key=value formats |
+| `e2e/signup.test.js` | A real production-mode install in Chrome: setup page with a wrong then right code, then the Owner invites a supervisor, the invitee joins in a separate session with the invited role, the link is used up, and the Owner sees the new user |
 | `e2e/browser.test.js` (6 flows) | A red alert reaches the operator's phone screen in under 5 s; the Hindi 3-step script is ticked through to resolved; the session cookie is invisible to JavaScript; an engineer edits Marathi wording; a drill is labelled and scored; the owner's WhatsApp preview is sent and shows delivery ticks; a password change; the gateway-offline banner; all Setup tabs |
 
 ## Detection (gateway)

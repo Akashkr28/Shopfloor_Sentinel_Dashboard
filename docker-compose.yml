@@ -1,0 +1,43 @@
+# Shopfloor Sentinel on a cloud VPS: the app behind Caddy with automatic HTTPS.
+#
+#   1. Point a DNS A record (e.g. sentinel.yourfactory.in) at the server.
+#   2. ./deploy/install.sh            – or follow docs/DEPLOYMENT.md "Cloud VPS with Docker"
+#   3. docker compose logs sentinel   – copy the one-time setup code, open https://<domain>
+services:
+  sentinel:
+    build: .
+    image: shopfloor-sentinel:latest
+    restart: unless-stopped
+    env_file: backend/.env
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: "1"          # one proxy hop: Caddy
+      COOKIE_SECURE: "true"
+      PUBLIC_URL: https://${DOMAIN:?set DOMAIN in the .env next to this file}
+    volumes:
+      - sentinel-data:/app/backend/data        # database, embedding model cache
+      - sentinel-uploads:/app/backend/uploads  # recorded audio
+    expose:
+      - "4000"
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on:
+      - sentinel
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # TLS certificates
+      - caddy-config:/config
+
+volumes:
+  sentinel-data:
+  sentinel-uploads:
+  caddy-data:
+  caddy-config:

@@ -6,6 +6,7 @@ import { processQueue, sendDailySummary } from './services/notify.js';
 import { runWatchdog } from './services/watchdog.js';
 import { syncKnowledgeBase } from './ai/knowledge.js';
 import { aiStatus } from './ai/triage.js'; // also subscribes auto-triage to new red alerts
+import { needsSetup, setupCode } from './services/accounts.js';
 
 assertSafeConfig();
 seed();
@@ -31,6 +32,13 @@ processQueue().catch(() => {}); // anything left PENDING from before a restart
 
 const server = app.listen(config.port, () => {
   console.log(`Shopfloor Sentinel API on http://localhost:${config.port}  (notify: ${config.notifyProvider}, daily summary: "${config.dailySummaryCron}" ${config.timezone})`);
+  if (needsSetup()) {
+    console.log(`\n  ┌──────────────────────────────────────────────────────────┐
+  │  First run – open ${(config.publicUrl || `http://localhost:${config.port}`).padEnd(39)}│
+  │  Setup code: ${setupCode().padEnd(44)}│
+  │  (needed once to create the Owner account)               │
+  └──────────────────────────────────────────────────────────┘\n`);
+  }
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

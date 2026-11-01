@@ -513,6 +513,16 @@ table.timeline { width: 100%; border-collapse: separate; border-spacing: 0; font
 .kb-hits p { margin: 0.3rem 0 0; color: var(--text-2); }
 @media (max-width: 640px) { .triage-steps li { grid-template-columns: auto 1fr; } .triage-steps .action { grid-column: 1 / -1; } }
 
+/* ---------- Accounts: setup, join, invites ---------- */
+.login-card.wide { width: min(560px, 100%); }
+.login-card .grid-2 { gap: 0 0.9rem; }
+.field-hint { font-weight: 400; font-size: 0.78rem; color: var(--muted); }
+.auth-hint { margin-top: 1.25rem; text-align: center; }
+.hero-factory { margin-top: 1.25rem; display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: #e2e8f0; font-weight: 600; font-size: 0.9rem; }
+.invite-created { margin-top: 1rem; padding: 0.9rem 1rem; border-radius: 12px; background: var(--green-soft); display: grid; gap: 0.6rem; }
+.invite-link { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.invite-link input { flex: 1 1 260px; width: auto; font-size: 0.8rem; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
   .editor { grid-template-columns: 1fr; }

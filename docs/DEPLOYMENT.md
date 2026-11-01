@@ -1,6 +1,91 @@
-# Deploying Shopfloor Sentinel in a factory
+# Deploying Shopfloor Sentinel
 
-This guide takes you from a fresh Raspberry Pi to a monitored plant network, with real WhatsApp or SMS messages to the owner. It assumes one Pi runs everything: the backend, the dashboard and both monitors. You can also run the backend on a separate PC and keep only the monitors on the Pi.
+There are two ways to run it:
+- **Cloud VPS with Docker** (below): the dashboard runs on a small server with HTTPS. Raspberry Pi gateways in the factory connect out to it, so the factory needs no open ports.
+- **Everything on a Raspberry Pi in the factory** (sections 1–10): plant data never leaves the site.
+
+Either way, it is **one factory per installation**.
+
+## Cloud VPS with Docker
+
+**You need:**
+- a VPS with Ubuntu 22.04/24.04 or Debian 12, 2 vCPU and 2 GB RAM (DigitalOcean, AWS Lightsail, Hetzner, …)
+- a domain name with a DNS **A record** pointing to the server, for example `sentinel.patilauto.in`
+- ports **80 and 443** open in the provider's firewall
+
+**Install:**
+
+```bash
+git clone https://github.com/Akashkr28/Shopfloor_Sentinel_Dashboard.git && cd Shopfloor_Sentinel_Dashboard
+```
+
+```bash
+sudo ./deploy/install.sh sentinel.patilauto.in
+```
+
+The installer:
+- installs Docker if it is missing
+- writes `backend/.env` with fresh random secrets (it never overwrites an existing file)
+- builds the image and starts the app behind Caddy, which gets and renews the HTTPS certificate automatically
+- prints the **setup code** and the gateway token
+
+**First run:**
+1. Open `https://<your domain>`. On a fresh install it goes straight to **Set up your factory**.
+2. Enter the setup code, the factory name and the Owner's details. The code is needed only once.
+3. Lost the code? Print it again with:
+   ```bash
+   docker compose logs sentinel | grep "Setup code"
+   ```
+
+**Add people:** go to **Setup → Users → Invite people**.
+- Choose the role (operator, supervisor, engineer, or owner – only owners can invite owners).
+- Optionally add a name, phone and language, then create the link.
+- Send it with **Share on WhatsApp**, or copy it.
+- The person opens it, picks a username and password, and is signed in with the role you chose. They cannot choose a different one.
+- Links work once and expire (7 days by default), and you can revoke pending links.
+- For a shared shopfloor-screen login, use **Create an account directly**.
+
+**Connect the factory gateways:** on each Raspberry Pi, set these in `gateway/config.json` and run the monitors from section 6:
+- `backendUrl: "https://<your domain>/api"`
+- `gatewayToken`: the token the installer printed
+
+The Pi only makes outbound HTTPS connections. Syslog from the HMIs still goes to the Pi on the factory LAN, never over the internet.
+
+**Turn on messaging and AI:** edit `backend/.env` (sections 8 and 8b), then apply it with:
+
+```bash
+docker compose up -d
+```
+
+**Update to a new version:**
+
+```bash
+git pull && docker compose up -d --build
+```
+
+Database migrations run by themselves on start.
+
+**Back up:** the whole state is in the `sentinel-data` volume (database and model cache) and the `sentinel-uploads` volume (recorded audio). This copies them to the current folder:
+
+```bash
+docker run --rm -v shopfloor_sentinel_dashboard_sentinel-data:/d -v "$PWD":/b alpine tar czf /b/sentinel-data-$(date +%F).tgz -C /d .
+```
+
+```bash
+docker run --rm -v shopfloor_sentinel_dashboard_sentinel-uploads:/d -v "$PWD":/b alpine tar czf /b/sentinel-uploads-$(date +%F).tgz -C /d .
+```
+
+The volume names start with the folder name, so check them with `docker volume ls`. Copy the archives off the server.
+
+**Smaller image:** to build without the local embedding model (keyword search instead), run:
+
+```bash
+docker compose build --build-arg WITH_EMBEDDINGS=false && docker compose up -d
+```
+
+---
+
+# Running everything on a Raspberry Pi in the factory
 
 ## 1. Hardware and network
 
@@ -46,7 +131,7 @@ Edit `backend/.env`:
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
-2. Set `INITIAL_OWNER_PASSWORD` (8+ characters) and `INITIAL_OWNER_PHONE`. The first owner account is created on first boot. After that, add everyone else under **Setup → Users**.
+2. Start the backend (step 6), open the dashboard and create the Owner with the **setup code** printed in the log (`journalctl -u sentinel-backend | grep "Setup code"`). After that, invite everyone else from **Setup → Users**.
 3. Keep `SEED_DEMO=false`.
 
 The backend **refuses to start** in production with missing or default secrets.
@@ -213,7 +298,8 @@ This keeps seven rolling copies. Copy them off the Pi as well, for example to a 
 
 - [ ] `NODE_ENV=production`, with unique `JWT_SECRET` and `GATEWAY_TOKEN`
 - [ ] The dashboard is served over HTTPS only, and `COOKIE_SECURE=true`
-- [ ] Demo data is off (`SEED_DEMO=false`), and the initial owner password has been changed
+- [ ] Demo data is off (`SEED_DEMO=false`), and `ALLOW_SIMULATE` is off
+- [ ] Pending invite links you no longer need are revoked (**Setup → Users**)
 - [ ] Every person has their own account (no shared logins), and leavers are disabled under **Setup → Users**
 - [ ] The Pi's SSH uses keys only, and only from the engineering station
 - [ ] The mirror-port interface has no IP address (`sudo nmcli dev set eth0 managed no`, or `ip addr flush dev eth0`)

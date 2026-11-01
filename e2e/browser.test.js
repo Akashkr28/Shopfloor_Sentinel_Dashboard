@@ -33,7 +33,10 @@ before(async () => {
   server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/server.js'], {
     cwd: path.join(ROOT, 'backend'),
     env: {
-      ...process.env, PORT: String(PORT), DB_PATH: DB, UPLOADS_DIR: path.join(tmp, 'uploads'), SEED_DEMO: 'true', NOTIFY_PROVIDER: 'mock',
+      // No Anthropic credentials from the developer's shell: the AI layer stays off in these tests.
+      ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('ANTHROPIC_'))),
+      AI_ENABLED: 'false',
+      PORT: String(PORT), DB_PATH: DB, UPLOADS_DIR: path.join(tmp, 'uploads'), SEED_DEMO: 'true', NOTIFY_PROVIDER: 'mock',
       GATEWAY_TOKEN: GW['x-gateway-token'], JWT_SECRET: 'e2e-jwt-secret-0123456789-0123456789', NODE_ENV: 'test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

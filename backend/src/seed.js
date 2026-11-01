@@ -30,7 +30,7 @@ export function ensureTemplates() {
  */
 export function seed({ reset = false } = {}) {
   if (reset) {
-    db.exec(`DELETE FROM notification_logs; DELETE FROM audit_logs; DELETE FROM alert_actions; DELETE FROM alert_events;
+    db.exec(`DELETE FROM invites; DELETE FROM settings; DELETE FROM ai_triage; DELETE FROM notification_logs; DELETE FROM audit_logs; DELETE FROM alert_actions; DELETE FROM alert_events;
              DELETE FROM alert_template_localizations; DELETE FROM alert_templates; DELETE FROM gateways;
              DELETE FROM machines; DELETE FROM users; DELETE FROM sqlite_sequence;`);
   }
@@ -42,9 +42,12 @@ export function seed({ reset = false } = {}) {
   );
 
   if (!config.seedDemoData) {
+    // Normal path: the first-run setup page creates the factory and its Owner.
+    // INITIAL_OWNER_* remains for unattended installs (scripts, CI).
     const pw = process.env.INITIAL_OWNER_PASSWORD;
-    if (!pw || pw.length < 8) {
-      console.warn('[seed] no users yet – set INITIAL_OWNER_PASSWORD (8+ chars) and restart to create the first owner account');
+    if (!pw) return false;
+    if (pw.length < 8) {
+      console.warn('[seed] INITIAL_OWNER_PASSWORD must be 8+ characters – ignored; use the setup page instead');
       return false;
     }
     insUser.run(
@@ -55,6 +58,7 @@ export function seed({ reset = false } = {}) {
       'en',
       bcrypt.hashSync(pw, 10),
     );
+    if (process.env.FACTORY_NAME) db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('factoryName', ?)").run(process.env.FACTORY_NAME);
     console.log('[seed] first owner account created – log in and add machines and users');
     return true;
   }

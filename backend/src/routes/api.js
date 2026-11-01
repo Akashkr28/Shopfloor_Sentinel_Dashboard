@@ -19,6 +19,9 @@ import {
 } from '../services/notify.js';
 import { buildDailySummary } from '../services/summary.js';
 import { gatewayStatus, recordGatewaySeen } from '../services/watchdog.js';
+import {
+  acceptInvite, completeSetup, createInvite, factoryName, listInvites, lookupInvite, needsSetup, revokeInvite, setSetting,
+} from '../services/accounts.js';
 import { getChunk, knowledgeStatus, listDocuments, searchKnowledge, syncKnowledgeBase } from '../ai/knowledge.js';
 import { aiStatus, latestTriage, requestTriage } from '../ai/triage.js';
 
@@ -73,6 +76,28 @@ api.get('/auth/session', (req, res) => res.json({ user: resolveSession(req).user
 api.post('/auth/logout', (req, res) => {
   clearSessionCookie(res);
   res.json({ ok: true });
+});
+
+// ---------- First-run setup and invite links (public, rate-limited) ----------
+/** What the login page needs before anyone signs in. */
+api.get('/meta', (_req, res) => res.json({ factoryName: factoryName(), needsSetup: needsSetup(), demo: config.seedDemoData, simulate: config.allowSimulate }));
+
+api.post('/setup', rateLimit({ name: 'setup', limit: 10, windowMs: 15 * 60000 }), (req, res) => {
+  const user = completeSetup(req.body || {});
+  setSessionCookie(res, signToken(user));
+  req.user = publicUser(user);
+  audit(req, 'FACTORY_SETUP', user.username, { factoryName: factoryName() });
+  res.status(201).json({ user: publicUser(user) });
+});
+
+const joinLimit = rateLimit({ name: 'join', limit: 30, windowMs: 15 * 60000 });
+api.get('/join/:token', joinLimit, (req, res) => res.json(lookupInvite(req.params.token)));
+api.post('/join/:token', joinLimit, (req, res) => {
+  const { user, inviteId } = acceptInvite(req.params.token, req.body || {});
+  setSessionCookie(res, signToken(user));
+  req.user = publicUser(user);
+  audit(req, 'INVITE_ACCEPTED', user.username, { inviteId, role: user.role });
+  res.status(201).json({ user: publicUser(user) });
 });
 
 // ---------- Gateway (shared secret, no user session) ----------
@@ -432,6 +457,7 @@ api.post('/alerts/:id/actions', (req, res) => {
 
 // ---------- Simulate (demo button in the dashboard) ----------
 api.post('/simulate', roleMiddleware(...MANAGERS), async (req, res) => {
+  if (!config.allowSimulate) return bad(res, 'Simulated events are off on this server (ALLOW_SIMULATE=false)', 403);
   const { eventTypeKey, machineId, details = {} } = req.body || {};
   const m = db.prepare('SELECT * FROM machines WHERE id = ?').get(Number(machineId));
   if (!m) return bad(res, 'Pick a machine');
@@ -603,4 +629,29 @@ api.post('/kb/reindex', roleMiddleware(...MANAGERS), async (req, res) => {
   const r = await syncKnowledgeBase();
   audit(req, 'KB_REINDEXED', null, { added: r.added, updated: r.updated, removed: r.removed, failed: r.failed.length });
   res.json({ ...r, status: await knowledgeStatus() });
+});
+
+// ---------- Invites & factory settings ----------
+const inviteUrl = (req, token) => `${config.publicUrl || `${req.protocol}://${req.get('host')}`}/join/${token}`;
+
+api.get('/invites', roleMiddleware(...MANAGERS), (_req, res) => res.json(listInvites()));
+
+api.post('/invites', roleMiddleware(...MANAGERS), rateLimit({ name: 'invite', limit: 50, windowMs: 3600000, key: (req) => req.user.id }), (req, res) => {
+  const inv = createInvite(req.user, req.body || {});
+  audit(req, 'INVITE_CREATED', inv.id, { role: inv.role, name: inv.name, expiresAt: inv.expiresAt });
+  // The link is shown once; only its hash is stored.
+  res.status(201).json({ ...inv, token: undefined, url: inviteUrl(req, inv.token) });
+});
+
+api.delete('/invites/:id', roleMiddleware(...MANAGERS), (req, res) => {
+  const inv = revokeInvite(req.user, req.params.id);
+  audit(req, 'INVITE_REVOKED', inv.id, { role: inv.role });
+  res.json(inv);
+});
+
+api.patch('/settings', roleMiddleware('OWNER'), (req, res) => {
+  const name = str(req.body?.factoryName, 'Factory name', { required: true, max: 80 });
+  setSetting('factoryName', name);
+  audit(req, 'SETTINGS_UPDATED', 'factoryName', { factoryName: name });
+  res.json({ factoryName: name });
 });
