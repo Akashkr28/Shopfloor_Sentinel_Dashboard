@@ -3,6 +3,12 @@ import { broadcast } from './live.js';
 import { notifyRedAlert, notifyResolved } from './notify.js';
 
 export const SEVERITIES = ['GREEN', 'AMBER', 'RED'];
+
+const redAlertListeners = [];
+/** Subscribe to new, non-drill red alerts (the AI layer uses this for auto-triage). */
+export function subscribeRedAlerts(fn) {
+  redAlertListeners.push(fn);
+}
 export const STATUSES = ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'];
 export const LANGS = ['en', 'hi', 'mr', 'ta'];
 const SEVERITY_RANK = { RED: 3, AMBER: 2, GREEN: 1 };
@@ -79,6 +85,7 @@ export async function ingestEvent(payload, { isDrill = false, drillTeam = null, 
   // Drills never reach the owner's phone.
   if (severity === 'RED' && !isDrill) {
     notifyRedAlert(alert).catch((e) => console.error('[notify] red alert failed', e));
+    for (const fn of redAlertListeners) fn(alert);
   }
   return alert;
 }

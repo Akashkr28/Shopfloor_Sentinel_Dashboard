@@ -15,6 +15,10 @@ process.env.TWILIO_AUTH_TOKEN = 'twilio-test-auth-token';
 process.env.PUBLIC_URL = 'https://sentinel.example.test';
 process.env.WHATSAPP_APP_SECRET = 'wa-test-app-secret';
 process.env.WHATSAPP_VERIFY_TOKEN = 'wa-verify';
+// AI layer: off unless a test file turns it on; lexical embeddings so tests need no model download.
+process.env.EMBEDDINGS ??= 'hash';
+process.env.AI_TRIAGE_AUTO ??= 'false';
+process.env.KB_DIRS ??= [path.resolve(import.meta.dirname, '..', '..', 'docs', 'playbooks'), path.resolve(import.meta.dirname, '..', '..', 'docs', 'advisories')].join(',');
 
 const { createApp } = await import('../src/app.js');
 const { seed } = await import('../src/seed.js');

@@ -14,6 +14,7 @@ const TABS = [
   ['gateways', 'Gateways', 'wifi'],
   ['notifications', 'Notifications', 'bell'],
   ['audit', 'Audit log', 'template'],
+  ['ai', 'AI & playbooks', 'spark'],
 ];
 
 // ---------------------------------------------------------------- machines
@@ -305,7 +306,7 @@ function GatewaysPanel() {
 }
 
 // ---------------------------------------------------------------- notifications
-const TYPE_LABEL = { RED_ALERT: 'Red alert', DAILY_SUMMARY: 'Daily summary', ESCALATION: 'Escalation', RESOLVED_UPDATE: 'Handled update', GATEWAY_OFFLINE: 'Gateway offline' };
+const TYPE_LABEL = { RED_ALERT: 'Red alert', DAILY_SUMMARY: 'Daily summary', ESCALATION: 'Escalation', RESOLVED_UPDATE: 'Handled update', GATEWAY_OFFLINE: 'Gateway offline', AI_SUMMARY: 'AI summary' };
 
 function NotificationsPanel() {
   const cfg = useFetch('/notifications/config');
@@ -431,6 +432,135 @@ function AuditPanel() {
   );
 }
 
+// ---------------------------------------------------------------- AI & knowledge base
+function AiPanel() {
+  const status = useFetch('/ai/status');
+  const docs = useFetch('/kb/documents');
+  const [q, setQ] = useState('');
+  const [hits, setHits] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const search = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      setHits(await api(`/kb/search?q=${encodeURIComponent(q)}&k=6`));
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const reindex = async () => {
+    setBusy(true);
+    setMsg('Indexing…');
+    try {
+      const r = await api('/kb/reindex', { method: 'POST' });
+      setMsg(`Done: ${r.added} added, ${r.updated} updated, ${r.removed} removed, ${r.unchanged} unchanged${r.failed.length ? `, ${r.failed.length} failed (${r.failed.map((f) => f.file).join(', ')})` : ''}.`);
+      status.reload();
+      docs.reload();
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const a = status.data?.ai;
+  const kb = status.data?.kb;
+  return (
+    <>
+      <div className="two-col">
+        <div className="panel">
+          <h3><Icon name="spark" size={18} /> AI triage</h3>
+          {a && (
+            <div className="kv">
+              <span>Status</span>
+              <b className={a.enabled ? 'ok' : 'error'}>{a.enabled ? 'On' : 'Off – set ANTHROPIC_API_KEY in backend/.env'}</b>
+              <span>Model</span>
+              <b className="mono">{a.model}</b>
+              <span>Effort</span>
+              <b>{a.effort}</b>
+              <span>Auto-triage</span>
+              <b>{a.autoTriage ? 'Every new red alert (not drills)' : 'Manual only'}</b>
+              <span>Owner WhatsApp</span>
+              <b>{a.notifyOwner ? 'AI summary sent once per alert' : 'Off'}</b>
+            </div>
+          )}
+          <p className="muted small">
+            The agent reads the alert, related events and machine history, searches the playbooks and advisories below, and writes an owner summary with cited next steps. It only reads – it never changes alerts or machines. MCP clients (Claude Code / Desktop) can use the same tools through <span className="mono">npm --prefix backend run mcp</span>.
+          </p>
+        </div>
+        <div className="panel">
+          <h3><Icon name="book" size={18} /> Knowledge base</h3>
+          {kb && (
+            <div className="kv">
+              <span>Vector store</span>
+              <b className="mono">{kb.store}</b>
+              <span>Embeddings</span>
+              <b className="mono small">{kb.embedder}</b>
+              <span>Documents</span>
+              <b>{Object.entries(kb.documents).map(([k, n]) => `${n} ${{ ADVISORY: ['advisory', 'advisories'], GUIDE: ['guide', 'guides'], PLAYBOOK: ['playbook', 'playbooks'] }[k][n === 1 ? 0 : 1]}`).join(', ') || 'none'}</b>
+              <span>Passages</span>
+              <b>{kb.chunks}</b>
+            </div>
+          )}
+          <p className="muted small">
+            Add Markdown playbooks to <span className="mono">docs/playbooks/</span> and CISA ICS advisories to <span className="mono">docs/advisories/</span> (<span className="mono">npm --prefix backend run kb:fetch-cisa -- --match "Siemens|Schneider"</span>), then re-index.
+          </p>
+          <button className="btn" onClick={reindex} disabled={busy}>Re-index</button>
+          {msg && <p className="small">{msg}</p>}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3>Try a search</h3>
+        <form className="form-row" onSubmit={search}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. someone plugged a pen drive into the press HMI" required minLength={2} />
+          <button className="btn btn-primary" disabled={busy}>Search</button>
+        </form>
+        {hits && (
+          <ol className="kb-hits">
+            {hits.map((h) => (
+              <li key={h.id}>
+                <div className="row gap-sm wrap">
+                  <span className={`pill ${h.kind === 'ADVISORY' ? 'sev-AMBER' : 'status'}`}>{h.kind.toLowerCase()}</span>
+                  <b>{h.url ? <a href={h.url} target="_blank" rel="noreferrer noopener">{h.title}</a> : h.title}</b>
+                  {h.heading && <span className="muted">› {h.heading}</span>}
+                  <span className="mono small muted">{h.id} · {h.score}</span>
+                </div>
+                <p className="small">{h.text.slice(0, 320)}{h.text.length > 320 ? '…' : ''}</p>
+              </li>
+            ))}
+            {hits.length === 0 && <p className="muted">No matches.</p>}
+          </ol>
+        )}
+      </div>
+
+      <div className="panel">
+        <h3>Indexed documents</h3>
+        <div className="table-wrap">
+          <table className="timeline">
+            <thead>
+              <tr><th>Title</th><th>Kind</th><th>Passages</th><th>Source</th><th>Indexed</th></tr>
+            </thead>
+            <tbody>
+              {(docs.data || []).map((d) => (
+                <tr key={d.id} className="no-click">
+                  <td>{d.url ? <a href={d.url} target="_blank" rel="noreferrer noopener">{d.title}</a> : d.title}</td>
+                  <td><span className={`pill ${d.kind === 'ADVISORY' ? 'sev-AMBER' : 'status'}`}>{d.kind.toLowerCase()}</span></td>
+                  <td className="mono">{d.chunkCount}</td>
+                  <td className="mono small">{d.source}</td>
+                  <td className="mono small">{fmtDateTime(d.indexedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function Setup() {
   const [params, setParams] = useSearchParams();
   const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'machines';
@@ -454,6 +584,7 @@ export default function Setup() {
       {tab === 'gateways' && <GatewaysPanel />}
       {tab === 'notifications' && <NotificationsPanel />}
       {tab === 'audit' && <AuditPanel />}
+      {tab === 'ai' && <AiPanel />}
     </div>
   );
 }

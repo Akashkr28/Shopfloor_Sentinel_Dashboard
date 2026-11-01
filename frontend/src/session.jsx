@@ -55,7 +55,7 @@ export function useLive(onEvent) {
 
   useEffect(() => {
     const es = new EventSource('/api/stream', { withCredentials: true });
-    const types = ['alert', 'alert-updated', 'notification', 'templates', 'machines', 'gateway'];
+    const types = ['alert', 'alert-updated', 'notification', 'templates', 'machines', 'gateway', 'triage'];
     const listeners = types.map((type) => {
       const fn = (e) => handler.current?.(type, JSON.parse(e.data || '{}'));
       es.addEventListener(type, fn);

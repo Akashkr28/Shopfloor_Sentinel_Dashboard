@@ -19,6 +19,8 @@ import {
 } from '../services/notify.js';
 import { buildDailySummary } from '../services/summary.js';
 import { gatewayStatus, recordGatewaySeen } from '../services/watchdog.js';
+import { getChunk, knowledgeStatus, listDocuments, searchKnowledge, syncKnowledgeBase } from '../ai/knowledge.js';
+import { aiStatus, latestTriage, requestTriage } from '../ai/triage.js';
 
 export const api = express.Router();
 
@@ -564,4 +566,41 @@ api.get('/audit', roleMiddleware(...MANAGERS), (req, res) => {
     ? db.prepare('SELECT * FROM audit_logs WHERE action = ? ORDER BY id DESC LIMIT ?').all(action, limit)
     : db.prepare('SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?').all(limit);
   res.json(rows.map((r) => ({ ...r, details: r.details ? JSON.parse(r.details) : null })));
+});
+
+// ---------- AI layer: triage + knowledge base ----------
+const TRIAGE_READERS = ['OWNER', 'ENGINEER', 'SUPERVISOR'];
+
+api.get('/ai/status', roleMiddleware(...MANAGERS), async (_req, res) => {
+  res.json({ ai: aiStatus(), kb: await knowledgeStatus() });
+});
+
+api.get('/alerts/:id/triage', roleMiddleware(...TRIAGE_READERS), (req, res) => {
+  res.json({ ai: aiStatus(), triage: latestTriage(req.params.id) });
+});
+
+api.post('/alerts/:id/triage', roleMiddleware(...MANAGERS), rateLimit({ name: 'triage', limit: 20, windowMs: 3600000, key: (req) => req.user.id }), (req, res) => {
+  const trigger = req.get('x-sentinel-client') === 'mcp' ? 'MCP' : 'MANUAL';
+  const t = requestTriage(req.params.id, { trigger, userId: req.user.id });
+  audit(req, 'AI_TRIAGE_REQUESTED', req.params.id, { trigger });
+  res.status(202).json(t);
+});
+
+api.get('/kb/search', roleMiddleware(...MANAGERS), async (req, res) => {
+  const q = str(req.query.q, 'q', { required: true, max: 500 });
+  const kind = ['PLAYBOOK', 'ADVISORY', 'GUIDE'].includes(req.query.kind) ? req.query.kind : undefined;
+  res.json(await searchKnowledge(q, { k: Math.min(Number(req.query.k) || 5, 20), kind }));
+});
+
+api.get('/kb/documents', roleMiddleware(...MANAGERS), (_req, res) => res.json(listDocuments()));
+
+api.get('/kb/chunks/:id', roleMiddleware(...TRIAGE_READERS), (req, res) => {
+  const c = getChunk(req.params.id);
+  return c ? res.json({ ...c, embedding: undefined }) : bad(res, 'Not found', 404);
+});
+
+api.post('/kb/reindex', roleMiddleware(...MANAGERS), async (req, res) => {
+  const r = await syncKnowledgeBase();
+  audit(req, 'KB_REINDEXED', null, { added: r.added, updated: r.updated, removed: r.removed, failed: r.failed.length });
+  res.json({ ...r, status: await knowledgeStatus() });
 });
