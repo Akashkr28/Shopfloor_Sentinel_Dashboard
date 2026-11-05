@@ -94,7 +94,7 @@ npm run seed:reset
   4. **Factory name:** the Owner sets it during setup and can rename it under Setup → Users.
 - **"Simulate event" button:** demo-only unless you set `ALLOW_SIMULATE=true`.
 
-To deploy to a cloud server, follow **[docs/DEPLOYMENT.md → Cloud VPS with Docker](docs/DEPLOYMENT.md#cloud-vps-with-docker)**:
+The simplest hosted option is **[Fly.io](docs/DEPLOYMENT.md#flyio)** (`./deploy/fly-deploy.sh`). To deploy to your own cloud server, follow **[docs/DEPLOYMENT.md → Cloud VPS with Docker](docs/DEPLOYMENT.md#cloud-vps-with-docker)**:
 1. Point a domain at the server.
 2. Run `sudo ./deploy/install.sh your.domain`.
 3. Open the site and enter the setup code.
