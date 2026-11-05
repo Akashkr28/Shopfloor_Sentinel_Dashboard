@@ -29,11 +29,12 @@ COPY --from=deps /app/backend/node_modules backend/node_modules
 COPY backend/ backend/
 COPY docs/ docs/
 COPY --from=web /app/frontend/dist frontend/dist
+COPY deploy/entrypoint.sh deploy/entrypoint.sh
 # Without the optional embedding package the app falls back to keyword search by itself.
 RUN mkdir -p backend/data backend/uploads && chown -R node:node backend/data backend/uploads
-USER node
-VOLUME ["/app/backend/data", "/app/backend/uploads"]
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:4000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 4000) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+# Starts as root only to fix volume ownership, then drops to the "node" user.
+ENTRYPOINT ["/app/deploy/entrypoint.sh"]
 CMD ["node", "backend/src/server.js"]

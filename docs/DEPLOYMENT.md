@@ -1,10 +1,45 @@
 # Deploying Shopfloor Sentinel
 
-There are two ways to run it:
-- **Cloud VPS with Docker** (below): the dashboard runs on a small server with HTTPS. Raspberry Pi gateways in the factory connect out to it, so the factory needs no open ports.
+There are three ways to run it:
+- **Fly.io** (below): the simplest hosted option, with no server to manage.
+- **Cloud VPS with Docker**: the dashboard runs on a small server with HTTPS. Raspberry Pi gateways in the factory connect out to it, so the factory needs no open ports.
 - **Everything on a Raspberry Pi in the factory** (sections 1–10): plant data never leaves the site.
 
 Either way, it is **one factory per installation**.
+
+## Fly.io
+
+The app runs as **one always-on machine** with a persistent disk, in Singapore (the closest Fly region to India; Fly has no India region). HTTPS at `https://<app>.fly.dev` is automatic. Vercel and other serverless hosts don't fit: the app needs a permanent disk for SQLite, an always-running process for escalations and the daily summary, and long-lived connections for live updates.
+
+**First deployment** (needs a Fly.io account and the `fly` CLI):
+
+```bash
+fly auth login
+```
+
+```bash
+./deploy/fly-deploy.sh your-app-name
+```
+
+The script creates the app and a 3 GB volume, generates the secrets (they go straight to Fly and are never printed), builds the image on Fly's servers and deploys. It's safe to re-run.
+
+**Memory:** keep at least **2 GB** (`fly.toml`). On 1 GB the embedding model is killed for running out of memory while indexing.
+
+**Useful commands:**
+
+| Task | Command |
+|---|---|
+| Deploy a new version | `fly deploy --ha=false` |
+| See the setup code | `fly logs --no-tail \| grep "Setup code"` |
+| Show the gateway token | `fly ssh console -C "printenv GATEWAY_TOKEN"` |
+| Add AI or messaging settings | `fly secrets set ANTHROPIC_API_KEY=... NOTIFY_PROVIDER=twilio ...` |
+| Check health | `fly status` |
+| Back up the data | `fly ssh sftp get /data/sentinel.db sentinel-backup.db` |
+| Snapshot the disk | `fly volumes snapshots create <volume-id>` |
+
+Keep it to **one machine**: SQLite lives on that machine's volume, so never scale past 1.
+
+**Gateways:** set `backendUrl` to `https://<app>.fly.dev/api` and `gatewayToken` to the token above in `gateway/config.json` on each Pi.
 
 ## Cloud VPS with Docker
 

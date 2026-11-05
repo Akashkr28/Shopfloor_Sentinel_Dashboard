@@ -59,8 +59,8 @@ export async function embed(texts) {
   const m = await embedderMode();
   if (m === 'hash') return texts.map(hashEmbed);
   const out = [];
-  for (let i = 0; i < texts.length; i += 16) {
-    const t = await extractor(texts.slice(i, i + 16), { pooling: 'mean', normalize: true });
+  for (let i = 0; i < texts.length; i += 4) {
+    const t = await extractor(texts.slice(i, i + 4), { pooling: 'mean', normalize: true });
     out.push(...t.tolist());
   }
   return out;
